@@ -13,13 +13,15 @@ import {
   FaHome,
   FaBell,
   FaComments,
-  FaPaperclip
+  FaPaperclip,
+  FaGraduationCap,
+  FaExclamationTriangle
 } from 'react-icons/fa';
 import { BiSolidDonateHeart } from 'react-icons/bi';
 import { IoMdMegaphone } from 'react-icons/io';
 import Sidebar from './Sidebar';
-import ComplaintForm from './ComplaintForm';
-import DonationSection from './DonationSection';
+import Complaint from '../pages/Complaint';
+import Donation from '../pages/Donation';
 import SocialFeed from './SocialFeed';
 import PostForm from './PostForm';
 import Navbar from './Navbar';
@@ -41,8 +43,6 @@ function Feed() {
   const [isSearchVisible, setIsSearchVisible] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1023);
   const [activeSection, setActiveSection] = useState('feed');
-  const [showComplaintModal, setShowComplaintModal] = useState(false);
-  const [showDonationModal, setShowDonationModal] = useState(false);
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newPostContent, setNewPostContent] = useState('');
@@ -70,7 +70,7 @@ function Feed() {
     const fetchCurrentUser = async () => {
       const { data: { user }, error } = await supabase.auth.getUser();
       if (error) {
-        console.error('Помилка отримання користувача:', error);
+        console.error('Error getting user:', error);
         setError(t('authError'));
         setLoading(false);
         return;
@@ -84,7 +84,7 @@ function Feed() {
           .single();
         
         if (profileError) {
-          console.error('Помилка завантаження профілю:', profileError);
+          console.error('Error loading profile:', profileError);
           setCurrentUser(user);
         } else {
           setCurrentUser({ ...user, ...userProfile });
@@ -206,7 +206,7 @@ function Feed() {
         .eq('is_read', false);
 
       if (error) {
-        console.error('Помилка отримання сповіщень:', error);
+        console.error('Error getting notifications:', error);
         return;
       }
 
@@ -214,7 +214,7 @@ function Feed() {
         setUnreadNotifications(count);
       }
     } catch (error) {
-      console.error('Помилка отримання сповіщень:', error);
+      console.error('Error getting notifications:', error);
     }
   };
 
@@ -228,7 +228,7 @@ function Feed() {
         .limit(3);
 
       if (error) {
-        console.error('Помилка завантаження спільнот:', error);
+        console.error('Error loading communities:', error);
         setCommunities(generateDemoCommunities());
         return;
       }
@@ -246,7 +246,7 @@ function Feed() {
 
       setCommunities(processedCommunities.length > 0 ? processedCommunities : generateDemoCommunities());
     } catch (error) {
-      console.error('Помилка завантаження спільнот:', error);
+      console.error('Error loading communities:', error);
       setCommunities(generateDemoCommunities());
     }
   };
@@ -294,7 +294,7 @@ function Feed() {
       setCurrentUser(null);
       navigate('/');
     } catch (err) {
-      console.error('Помилка виходу:', err);
+      console.error('Logout error:', err);
       setError(t('logoutError'));
     }
   };
@@ -308,7 +308,7 @@ function Feed() {
         .eq('read', false);
       
       if (error) {
-        console.error('Помилка оновлення сповіщень:', error);
+        console.error('Error updating notifications:', error);
         return;
       }
       
@@ -317,15 +317,19 @@ function Feed() {
   };
 
   const handleComplaintClick = () => {
-    if (isMobile) {
-      setShowComplaintModal(true);
-    }
+    navigate('/complaint');
   };
 
   const handleDonationClick = () => {
-    if (isMobile) {
-      setShowDonationModal(true);
-    }
+    navigate('/donation');
+  };
+
+  const handleEducationClick = () => {
+    navigate('/education');
+  };
+
+  const handleViolatorsClick = () => {
+    navigate('/violators');
   };
 
   const handleCreatePostFromSidebar = () => {
@@ -447,6 +451,20 @@ function Feed() {
                   <BiSolidDonateHeart className="mr-1 text-green-500 text-sm sm:text-base" />
                   {t('donate')}
                 </button>
+                <button 
+                  className="flex items-center text-gray-500 text-xs sm:text-sm font-medium"
+                  onClick={handleEducationClick}
+                >
+                  <FaGraduationCap className="mr-1 text-purple-500 text-sm sm:text-base" />
+                  {t('education')}
+                </button>
+                <button 
+                  className="flex items-center text-gray-500 text-xs sm:text-sm font-medium"
+                  onClick={handleViolatorsClick}
+                >
+                  <FaExclamationTriangle className="mr-1 text-orange-500 text-sm sm:text-base" />
+                  {t('violators')}
+                </button>
               </div>
             )}
           </div>
@@ -462,12 +480,68 @@ function Feed() {
             className="lg:col-span-3 space-y-4 overflow-y-auto"
             style={{ maxHeight: 'calc(100vh - 80px)' }}
           >
-            <div>
-              <ComplaintForm setError={setError} error={error} />
+            <div className="bg-white/95 p-6 rounded-2xl shadow-lg relative overflow-hidden border border-blue-100 backdrop-blur-sm">
+              <div className="relative z-10">
+                <button
+                  onClick={handleComplaintClick}
+                  className="w-full px-4 py-3 rounded-full font-semibold transition-all duration-300 flex items-center justify-center gap-2 shadow-md hover:shadow-xl text-sm bg-gradient-to-r from-blue-900 via-blue-800 to-blue-700 hover:from-blue-950 hover:via-blue-900 hover:to-blue-800 text-white"
+                >
+                  <IoMdMegaphone className="w-4 h-4" />
+                  {t('submitComplaint')}
+                </button>
+                
+                <p className="text-center mt-2 mb-4 text-blue-950 text-sm opacity-80">
+                  {t('complaint.subtitle') || 'Поділіться своїми скаргами та допоможіть нам покращити наш сервіс'}
+                </p>
+              </div>
             </div>
             
-            <div>
-              <DonationSection />
+            <div className="bg-white/95 p-6 rounded-2xl shadow-lg relative overflow-hidden border border-blue-100 backdrop-blur-sm">
+              <div className="relative z-10">
+                <button
+                  onClick={handleDonationClick}
+                  className="w-full px-4 py-3 rounded-full font-semibold transition-all duration-300 flex items-center justify-center gap-2 shadow-md hover:shadow-xl text-sm bg-gradient-to-r from-blue-900 via-blue-800 to-blue-700 hover:from-blue-950 hover:via-blue-900 hover:to-blue-800 text-white"
+                >
+                  <BiSolidDonateHeart className="w-4 h-4" />
+                  {t('donateNow')}
+                </button>
+                
+                <p className="text-center mt-2 mb-4 text-blue-950 text-sm opacity-80">
+                  {t('donationDescription') || 'Ваша підтримка допомагає нам продовжувати боротьбу за права людини'}
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-white/95 p-6 rounded-2xl shadow-lg relative overflow-hidden border border-blue-100 backdrop-blur-sm">
+              <div className="relative z-10">
+                <button
+                  onClick={handleEducationClick}
+                  className="w-full px-4 py-3 rounded-full font-semibold transition-all duration-300 flex items-center justify-center gap-2 shadow-md hover:shadow-xl text-sm bg-gradient-to-r from-blue-900 via-blue-800 to-blue-700 hover:from-blue-950 hover:via-blue-900 hover:to-blue-800 text-white"
+                >
+                  <FaGraduationCap className="w-4 h-4" />
+                  {t('viewEducationCourse')}
+                </button>
+                
+                <p className="text-center mt-2 mb-4 text-blue-950 text-sm opacity-80">
+                  {t('educationCourseDescription')}
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-white/95 p-6 rounded-2xl shadow-lg relative overflow-hidden border border-blue-100 backdrop-blur-sm">
+              <div className="relative z-10">
+                <button
+                  onClick={handleViolatorsClick}
+                  className="w-full px-4 py-3 rounded-full font-semibold transition-all duration-300 flex items-center justify-center gap-2 shadow-md hover:shadow-xl text-sm bg-gradient-to-r from-blue-900 via-blue-800 to-blue-700 hover:from-blue-950 hover:via-blue-900 hover:to-blue-800 text-white"
+                >
+                  <FaExclamationTriangle className="w-4 h-4" />
+                  {t('viewViolatorsList')}
+                </button>
+                
+                <p className="text-center mt-2 mb-4 text-blue-950 text-sm opacity-80">
+                  {t('violatorsListDescription')}
+                </p>
+              </div>
             </div>
             
             <div className="bg-white p-4 rounded-lg shadow-md">
@@ -523,7 +597,7 @@ function Feed() {
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
           >
             <FaHome className="w-5 h-5 mb-1" />
-            <span>Головна</span>
+            <span>Home</span>
           </button>
           
           <button 
@@ -531,7 +605,7 @@ function Feed() {
             onClick={handleComplaintClick}
           >
             <IoMdMegaphone className="w-5 h-5 mb-1" />
-            <span>Скарги</span>
+            <span>Complaints</span>
           </button>
           
           <button 
@@ -541,7 +615,7 @@ function Feed() {
             <div className="relative">
               <FaPlus className="w-5 h-5 mb-1" />
             </div>
-            <span>Створити</span>
+            <span>Create</span>
           </button>
           
           <button 
@@ -549,7 +623,7 @@ function Feed() {
             onClick={handleDonationClick}
           >
             <BiSolidDonateHeart className="w-5 h-5 mb-1" />
-            <span>Донати</span>
+            <span>Donations</span>
           </button>
           
           <button 
@@ -557,46 +631,8 @@ function Feed() {
             onClick={() => navigate('/chat')}
           >
             <FaComments className="w-5 h-5 mb-1" />
-            <span>Чат</span>
+            <span>Chat</span>
           </button>
-        </div>
-      )}
-
-      {showComplaintModal && isMobile && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
-          <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-3 sm:p-4 border-b sticky top-0 bg-white z-10">
-              <h2 className="text-lg font-semibold text-navy">{t('submitComplaint')}</h2>
-              <button
-                onClick={() => setShowComplaintModal(false)}
-                className="p-1 sm:p-2 rounded-full hover:bg-gray-100"
-              >
-                <FaTimes className="text-gray-500 text-lg" />
-              </button>
-            </div>
-            <div className="p-4 sm:p-6">
-              <ComplaintForm setError={setError} error={error} />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showDonationModal && isMobile && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
-          <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-3 sm:p-4 border-b sticky top-0 bg-white z-10">
-              <h2 className="text-lg font-semibold text-navy">{t('donate')}</h2>
-              <button
-                onClick={() => setShowDonationModal(false)}
-                className="p-1 sm:p-2 rounded-full hover:bg-gray-100"
-              >
-                <FaTimes className="text-gray-500 text-lg" />
-              </button>
-            </div>
-            <div className="p-4 sm:p-6">
-              <DonationSection />
-            </div>
-          </div>
         </div>
       )}
 
