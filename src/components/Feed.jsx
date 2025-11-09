@@ -104,11 +104,11 @@ function Feed() {
   }, [t]);
 
   useEffect(() => {
-    if (!isMobile) {
-      setTimeout(() => {
-        setupSynchronizedScrolling();
-      }, 100);
-    }
+    // if (!isMobile) {
+    //   setTimeout(() => {
+    //     setupSynchronizedScrolling();
+    //   }, 100);
+    // }
 
     return () => {
       if (leftColumnRef.current) {
