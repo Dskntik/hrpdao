@@ -197,7 +197,7 @@ function Signup() {
         return;
       }
       alert(isEmail ? t("checkEmail") : t("checkSMS"));
-      navigate("/feed");
+      navigate("/onboarding");
     } catch (err) {
       console.error("Signup error:", err.message);
       setError(err.message);
@@ -211,7 +211,7 @@ function Signup() {
       provider: "google",
     });
     if (error) setError(error.message);
-    else navigate("/feed");
+    else navigate("/onboarding");
     setIsLoading(false);
   };
 
@@ -221,7 +221,7 @@ function Signup() {
       provider: "twitter",
     });
     if (error) setError(error.message);
-    else navigate("/feed");
+    else navigate("/onboarding");
     setIsLoading(false);
   };
 
@@ -240,7 +240,7 @@ function Signup() {
       if (error) setError(error.message);
       else {
         alert(t("walletConnected") + `: ${address}`);
-        navigate("/feed");
+        navigate("/onboarding");
       }
     } catch (err) {
       setError(err.message);
