@@ -20,8 +20,8 @@ import {
 import { BiSolidDonateHeart } from 'react-icons/bi';
 import { IoMdMegaphone } from 'react-icons/io';
 import Sidebar from './Sidebar';
-// import Complaint from '../pages/Complaint';
-// import Donation from '../pages/Donation';
+import Complaint from '../pages/Complaint';
+import Donation from '../pages/Donation';
 import SocialFeed from './SocialFeed';
 import PostForm from './PostForm';
 import Navbar from './Navbar';
