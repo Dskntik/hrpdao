@@ -24,10 +24,12 @@ import CommunityDetail from "./pages/CommunityDetail";
 import Events from "./components/Events";
 import Notifications from "./components/Notifications";
 import Settings from "./components/Settings";
-// import Education from "./pages/Education";
-// import Violators from "./pages/Violators";
-// import Complaint from "./pages/Complaint";
-// import Donation from "./pages/Donation";
+import Education from "./pages/Education";
+import Violators from "./pages/Violators";
+import Complaint from "./pages/Complaint";
+import Donation from "./pages/Donation";
+import Onboarding from "./pages/Onboarding";
+import Moderation from './components/Moderation';
 
 // Error Boundary for handling errors in components
 class ErrorBoundary extends Component {
@@ -573,10 +575,12 @@ export default function AppWrapper() {
           <Route path="/community/:communityId/events" element={<Events />} />
           <Route path="/notifications" element={<Notifications />} />
           <Route path="/settings" element={<Settings />} />
-          {/* <Route path="/education" element={<Education />} /> */}
-          {/* <Route path="/violators" element={<Violators />} /> */}
-          {/* <Route path="/complaint" element={<Complaint />} />
-          <Route path="/donation" element={<Donation />} /> */}
+          <Route path="/education" element={<Education />} />
+          <Route path="/violators" element={<Violators />} />
+          <Route path="/complaint" element={<Complaint />} />
+          <Route path="/donation" element={<Donation />} />
+          <Route path="/onboarding" element={<Onboarding />} />
+          <Route path="/moderation" element={<Moderation />} />
         </Routes>
       </ErrorBoundary>
     </BrowserRouter>
