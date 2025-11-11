@@ -4,18 +4,13 @@ import { useNavigate, Link } from 'react-router-dom';
 import { MapContainer, TileLayer, GeoJSON, Marker, Popup } from 'react-leaflet';
 import { supabase } from '../utils/supabase';
 import countries from '../utils/countries';
-import Sidebar from './Sidebar';
-import Navbar from './Navbar';
-import ComplaintForm from './ComplaintForm';
-import DonationSection from './DonationSection';
 import SocialFeed from './SocialFeed';
 import CreatePostModal from './CreatePostModal';
+import MainLayout from '../components/layout/MainLayout';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { FaInfoCircle, FaMapMarkerAlt, FaBars, FaTimes, FaHome, FaComments, FaUserCircle, FaPlus } from 'react-icons/fa';
-import { IoMdMegaphone } from 'react-icons/io';
-import { BiSolidDonateHeart } from 'react-icons/bi';
-import { motion, AnimatePresence } from 'framer-motion';
+import { FaInfoCircle, FaMapMarkerAlt } from 'react-icons/fa';
+import { motion } from 'framer-motion';
 import { ChevronDown } from 'lucide-react';
 
 const customIcon = new L.Icon({
@@ -66,10 +61,6 @@ function Country() {
   });
   const [users, setUsers] = useState([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 1023);
-  const [showComplaintModal, setShowComplaintModal] = useState(false);
-  const [showDonationModal, setShowDonationModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newPostContent, setNewPostContent] = useState('');
   const [newPostMedia, setNewPostMedia] = useState(null);
@@ -77,114 +68,59 @@ function Country() {
   const [selectedCountry, setSelectedCountry] = useState('');
   const [createPostLoading, setCreatePostLoading] = useState(false);
   const [createPostError, setCreatePostError] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  const leftColumnRef = useRef(null);
   const centerColumnRef = useRef(null);
-  const rightColumnRef = useRef(null);
-  const isScrolling = useRef(false);
 
   const geoUrl = 'https://raw.githubusercontent.com/datasets/geo-boundaries-world-110m/master/countries.geojson';
 
   useEffect(() => {
-    const handleResize = () => {
-      setIsMobile(window.innerWidth < 1023);
+    const fetchCurrentUser = async () => {
+      try {
+        setLoading(true);
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        
+        if (authError) {
+          console.error('Error retrieving user:', authError);
+          setLoading(false);
+          return;
+        }
+
+        if (user) {
+          // We get additional profile data from the database
+          const { data: profile, error: profileError } = await supabase
+            .from('users')
+            .select('username, profile_picture, country, city, status, bio, social_links')
+            .eq('id', user.id)
+            .single();
+
+          if (profileError) {
+            console.error('Error loading profile:', profileError);
+            // If the profile is not found, we use only data from auth
+            setCurrentUser(user);
+          } else {
+            // Combining data from auth and profile
+            setCurrentUser({ 
+              ...user, 
+              username: profile.username,
+              profile_picture: profile.profile_picture,
+              country: profile.country,
+              city: profile.city,
+              status: profile.status,
+              bio: profile.bio,
+              social_links: profile.social_links
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Error retrieving user data:', err);
+      } finally {
+        setLoading(false);
+      }
     };
 
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    fetchCurrentUser();
   }, []);
-
-  useEffect(() => {
-    if (!isMobile) {
-      setTimeout(() => {
-        setupSynchronizedScrolling();
-      }, 100);
-    }
-
-    return () => {
-      if (leftColumnRef.current) {
-        leftColumnRef.current.removeEventListener('scroll', handleLeftScroll);
-      }
-      if (centerColumnRef.current) {
-        centerColumnRef.current.removeEventListener('scroll', handleCenterScroll);
-      }
-      if (rightColumnRef.current) {
-        rightColumnRef.current.removeEventListener('scroll', handleRightScroll);
-      }
-    };
-  }, [isLoadingData, isMobile]);
-
-  const setupSynchronizedScrolling = () => {
-    const leftColumn = leftColumnRef.current;
-    const centerColumn = centerColumnRef.current;
-    const rightColumn = rightColumnRef.current;
-
-    if (leftColumn && centerColumn && rightColumn) {
-      leftColumn.addEventListener('scroll', handleLeftScroll);
-      centerColumn.addEventListener('scroll', handleCenterScroll);
-      rightColumn.addEventListener('scroll', handleRightScroll);
-    }
-  };
-
-  const handleLeftScroll = (e) => {
-    if (isScrolling.current) return;
-    isScrolling.current = true;
-
-    const leftColumn = leftColumnRef.current;
-    const centerColumn = centerColumnRef.current;
-    const rightColumn = rightColumnRef.current;
-
-    if (leftColumn && centerColumn && rightColumn) {
-      const scrollPercentage = leftColumn.scrollTop / (leftColumn.scrollHeight - leftColumn.clientHeight);
-      
-      centerColumn.scrollTop = scrollPercentage * (centerColumn.scrollHeight - centerColumn.clientHeight);
-      rightColumn.scrollTop = scrollPercentage * (rightColumn.scrollHeight - rightColumn.clientHeight);
-    }
-
-    setTimeout(() => {
-      isScrolling.current = false;
-    }, 50);
-  };
-
-  const handleCenterScroll = (e) => {
-    if (isScrolling.current) return;
-    isScrolling.current = true;
-
-    const leftColumn = leftColumnRef.current;
-    const centerColumn = centerColumnRef.current;
-    const rightColumn = rightColumnRef.current;
-
-    if (leftColumn && centerColumn && rightColumn) {
-      const scrollPercentage = centerColumn.scrollTop / (centerColumn.scrollHeight - centerColumn.clientHeight);
-      
-      leftColumn.scrollTop = scrollPercentage * (leftColumn.scrollHeight - leftColumn.clientHeight);
-      rightColumn.scrollTop = scrollPercentage * (rightColumn.scrollHeight - rightColumn.clientHeight);
-    }
-
-    setTimeout(() => {
-      isScrolling.current = false;
-    }, 50);
-  };
-
-  const handleRightScroll = (e) => {
-    if (isScrolling.current) return;
-    isScrolling.current = true;
-
-    const leftColumn = leftColumnRef.current;
-    const centerColumn = centerColumnRef.current;
-    const rightColumn = rightColumnRef.current;
-
-    if (leftColumn && centerColumn && rightColumn) {
-      const scrollPercentage = rightColumn.scrollTop / (rightColumn.scrollHeight - rightColumn.clientHeight);
-      
-      leftColumn.scrollTop = scrollPercentage * (leftColumn.scrollHeight - leftColumn.clientHeight);
-      centerColumn.scrollTop = scrollPercentage * (centerColumn.scrollHeight - centerColumn.clientHeight);
-    }
-
-    setTimeout(() => {
-      isScrolling.current = false;
-    }, 50);
-  };
 
   const handleGeolocation = () => {
     setIsLoading(true);
@@ -204,18 +140,18 @@ function Country() {
               setGeolocationAccepted(true);
               await fetchCountryData(countryCode);
             } else {
-              setError(t('countryNotFound') || 'Країну не знайдено');
+              setError(t('countryNotFound') || 'Country not found');
             }
             setIsLoading(false);
           } catch (err) {
-            console.error('Помилка геолокації:', err);
-            setError(t('geolocationError') || 'Помилка отримання геолокації');
+            console.error('Geolocation error:', err);
+            setError(t('geolocationError') || 'Error getting geolocation');
             setIsLoading(false);
           }
         },
         (err) => {
-          console.error('Помилка геолокації:', err);
-          setError(t('geolocationNotSupported') || 'Геолокація не підтримується або доступ заборонено');
+          console.error('Geolocation error:', err);
+          setError(t('geolocationNotSupported') || 'Geolocation not supported or access denied');
           setIsLoading(false);
         },
         {
@@ -225,7 +161,7 @@ function Country() {
         }
       );
     } else {
-      setError(t('geolocationNotSupported') || 'Геолокація не підтримується вашим браузером');
+      setError(t('geolocationNotSupported') || 'Geolocation not supported by your browser');
       setIsLoading(false);
     }
   };
@@ -303,38 +239,19 @@ function Country() {
         });
       }
     } catch (err) {
-      console.error('Помилка завантаження даних країни:', err);
-      setError(t('dataError') || 'Помилка завантаження даних');
+      console.error('Error loading country data:', err);
+      setError(t('dataError') || 'Error loading data');
     } finally {
       setIsLoadingData(false);
     }
   };
 
   useEffect(() => {
-    const fetchCurrentUser = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const { data: userData } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', user.id)
-            .single();
-          setCurrentUser(userData);
-          if (userData.country) {
-            setSelectedCountry(userData.country);
-          }
-        }
-      } catch (err) {
-        console.error('Помилка завантаження даних користувача:', err);
-      }
-    };
-
     const fetchUserCountry = async () => {
       try {
         const { data: { user }, error: authError } = await supabase.auth.getUser();
         if (authError || !user) {
-          console.error('Помилка авторизації:', authError);
+          console.error('Authorization error:', authError);
           return;
         }
         const { data, error } = await supabase
@@ -349,7 +266,7 @@ function Country() {
           fetchCountryData(data.country);
         }
       } catch (err) {
-        console.error('Помилка завантаження країни користувача:', err);
+        console.error('Error loading user country:', err);
       }
     };
 
@@ -360,12 +277,11 @@ function Country() {
         const data = await response.json();
         setGeoData(data);
       } catch (err) {
-        console.error('Помилка завантаження GeoJSON:', err);
-        setError(t('geoJsonError') || 'Помилка завантаження карти');
+        console.error('Error loading GeoJSON:', err);
+        setError(t('geoJsonError') || 'Error loading map');
       }
     };
 
-    fetchCurrentUser();
     fetchUserCountry();
     fetchGeoData();
   }, [t]);
@@ -374,429 +290,202 @@ function Country() {
     navigate(`/public/${userId}`);
   };
 
-  const handleComplaintClick = () => {
-    setShowComplaintModal(true);
-  };
-
-  const handleDonationClick = () => {
-    setShowDonationModal(true);
-  };
-
-  const handleCreatePostFromSidebar = () => {
-    setShowCreateModal(true);
-  };
-
   const countryName = countries.find((c) => c.code === country)?.name[i18n.language] || t('unknown');
 
-  if (isLoading) return (
-    <div className="min-h-screen bg-gradient-to-br from-white to-gray-100 flex items-center justify-center">
-      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+  // Add debug for verification
+  console.log('Country currentUser:', currentUser);
+  console.log('Country loading:', loading);
+
+  const countryContent = (
+    <div className="space-y-4">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="bg-white/95 p-4 md:p-6 rounded-2xl shadow-lg border border-gray-100 backdrop-blur-sm"
+      >
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between">
+          {userCountry && (
+            <p className="text-gray-900 font-semibold mb-4 md:mb-0 text-center md:text-left">
+              {t('yourCountry')}: {countries.find((c) => c.code === userCountry)?.name[i18n.language || 'en'] || t('unknown')}
+            </p>
+          )}
+          
+          <div className="flex items-center gap-2 w-full md:w-auto">
+            <div className="relative w-full md:w-auto">
+              <select
+                value={country}
+                onChange={(e) => {
+                  setCountry(e.target.value);
+                  setGeolocationAccepted(true);
+                  if (e.target.value) fetchCountryData(e.target.value);
+                }}
+                className="w-full md:w-48 px-4 py-2.5 rounded-full border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 appearance-none bg-white text-blue-950 text-sm shadow-sm"
+                aria-label={t('selectCountry')}
+              >
+                <option value="">{t('selectCountry')}</option>
+                {countries.map(({ code, name }) => (
+                  <option key={code} value={code}>{name[i18n.language]}</option>
+                ))}
+              </select>
+              <ChevronDown className="w-4 h-4 text-gray-500 absolute right-3 top-3 pointer-events-none" />
+            </div>
+            
+            <button
+              onClick={handleGeolocation}
+              className="p-2 bg-blue-100 hover:bg-blue-200 rounded-full transition-colors"
+              disabled={isLoading}
+              title={t('useGeolocation')}
+            >
+              <FaMapMarkerAlt className="text-blue-600 w-5 h-5" />
+            </button>
+          </div>
+        </div>
+        {error && (
+          <div className="mt-2 text-red-500 text-sm text-center">
+            {error}
+          </div>
+        )}
+      </motion.div>
+      
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.1 }}
+        className="bg-white/95 p-4 md:p-6 rounded-2xl shadow-lg border border-gray-100 backdrop-blur-sm"
+      >
+        {geoData ? (
+          <MapContainer
+            center={[20, 0]}
+            zoom={2}
+            style={{ height: '300px', width: '100%' }}
+            className="rounded-lg border border-gray-200"
+          >
+            <TileLayer
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            />
+            <GeoJSON
+              data={geoData}
+              style={() => ({
+                fillColor: '#3B82F6',
+                weight: 1,
+                opacity: 1,
+                color: '#1E40AF',
+                fillOpacity: 0.6,
+              })}
+              onEachFeature={(feature, layer) => {
+                const countryCode = feature.properties.ISO_A2;
+                layer.on({
+                  click: () => {
+                    setCountry(countryCode);
+                    fetchCountryData(countryCode);
+                  },
+                });
+                layer.bindPopup(
+                  countries.find((c) => c.code === countryCode)?.name[i18n.language || 'en'] ||
+                    feature.properties.name
+                );
+              }}
+            />
+            {Object.entries(countryCoordinates).map(([code, coords]) => (
+              <Marker key={code} position={coords} icon={customIcon}>
+                <Popup>
+                  {countries.find((c) => c.code === code)?.name[i18n.language || 'en'] || code}
+                </Popup>
+              </Marker>
+            ))}
+          </MapContainer>
+        ) : (
+          <div className="text-gray-900 text-center">{t('loadingMap')}</div>
+        )}
+      </motion.div>
+
+      {/* Country details */}
+      {country && (
+        <>
+          {/* Country title and service links */}
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.2 }}
+            className="bg-white/95 p-4 md:p-6 rounded-2xl shadow-lg border border-gray-100 backdrop-blur-sm flex justify-between items-center"
+          >
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900">{t('countryDetailTitle', { country: countryName })}</h1>
+            <Link
+              to={`/services/${country}`}
+              className="text-lg font-semibold text-blue-600 hover:text-blue-700 transition-all duration-300"
+            >
+              {t('services.title', { country: countryName })}
+            </Link>
+          </motion.div>
+
+          {/* Freedom ratings */}
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.3 }}
+            className="bg-white/95 p-4 md:p-6 rounded-2xl shadow-lg border border-gray-100 backdrop-blur-sm"
+          >
+            <h2 className="text-xl font-bold text-gray-900 mb-4">{t('freedomRatings')}</h2>
+            {isLoadingData ? (
+              <div className="text-center py-4">
+                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500 mx-auto"></div>
+                <p className="text-gray-600 mt-2">{t('loading')}</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4">
+                {['overall_freedom', 'speech_freedom', 'economic_freedom', 'political_freedom', 'human_rights_freedom'].map((key) => (
+                  <div key={key} className="relative group">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-sm font-medium text-gray-900">{t(key)}</span>
+                      <span className="text-sm font-semibold text-blue-600">{freedomRatings[key]}/10</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-3 mb-1">
+                      <div
+                        className="bg-gradient-to-r from-blue-500 to-blue-600 h-3 rounded-full transition-all duration-300"
+                        style={{ width: `${(parseFloat(freedomRatings[key]) / 10) * 100}%` }}
+                      ></div>
+                    </div>
+                    <div className="absolute left-0 top-full mt-1 hidden group-hover:block bg-white shadow-lg p-3 rounded-lg z-10 border border-gray-200 min-w-[200px]">
+                      <FaInfoCircle className="text-blue-600 text-sm inline mr-1" />
+                      <span className="text-xs text-gray-700">{t(`${key}Tooltip`)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </motion.div>
+
+          {/* Social feed for the country */}
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.4 }}
+            className="bg-white/95 p-4 md:p-6 rounded-2xl shadow-lg border border-gray-100 backdrop-blur-sm"
+          >
+            <h2 className="text-xl font-bold text-gray-900 mb-4">{t('postsFromCountry', { country: countryName })}</h2>
+            <SocialFeed userId={null} countryCode={country} />
+          </motion.div>
+        </>
+      )}
     </div>
   );
 
-  if (error) return (
-    <div className="min-h-screen bg-gradient-to-br from-white to-gray-100 flex items-center justify-center">
-      <div className="bg-white p-6 rounded-2xl shadow-lg text-red-500 text-center">
-        {t('error')}: {error}
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-white to-gray-100 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
       </div>
-    </div>
-  );
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-white to-gray-100 flex flex-col">
-      <Navbar 
-        currentUser={currentUser} 
-        onToggleSidebar={() => setIsSidebarOpen(true)}
-        isMobile={isMobile}
-      />
-      
-      {/* Mobile Sidebar Overlay */}
-      {isSidebarOpen && isMobile && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
-          onClick={() => setIsSidebarOpen(false)}
-        >
-          <div 
-            className="absolute left-0 top-0 h-full w-3/4 max-w-xs bg-white shadow-lg transform transition-transform"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-4 border-b">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold">{t('menu')}</h2>
-                <button 
-                  onClick={() => setIsSidebarOpen(false)}
-                  className="p-2 rounded-full hover:bg-gray-100"
-                >
-                  <FaTimes />
-                </button>
-              </div>
-            </div>
-            <div className="p-4">
-              <Sidebar currentUser={currentUser} addPostButton={false} onShowCreateModal={handleCreatePostFromSidebar} />
-            </div>
-          </div>
-        </div>
-      )}
-      
-      <div className="w-full mx-auto px-4 grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 mt-4 pb-16 lg:pb-0">
-        {/* Left panel - Sidebar (hidden on mobile devices) */}
-        {!isMobile && (
-          <div 
-            ref={leftColumnRef}
-            className="lg:col-span-3 overflow-y-auto"
-            style={{ maxHeight: 'calc(100vh - 80px)' }}
-          >
-            <Sidebar currentUser={currentUser} addPostButton={false} onShowCreateModal={handleCreatePostFromSidebar} />
-          </div>
-        )}
-        
-        {/* Central panel */}
-        <div 
-          ref={centerColumnRef}
-          className="lg:col-span-6 overflow-y-auto space-y-4"
-          style={{ maxHeight: 'calc(100vh - 80px)' }}
-        >
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="bg-white/95 p-4 md:p-6 rounded-2xl shadow-lg border border-gray-100 backdrop-blur-sm"
-          >
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between">
-              {userCountry && (
-                <p className="text-gray-900 font-semibold mb-4 md:mb-0 text-center md:text-left">
-                  {t('yourCountry')}: {countries.find((c) => c.code === userCountry)?.name[i18n.language || 'en'] || t('unknown')}
-                </p>
-              )}
-              
-              <div className="flex items-center gap-2 w-full md:w-auto">
-                <div className="relative w-full md:w-auto">
-                  <select
-                    value={country}
-                    onChange={(e) => {
-                      setCountry(e.target.value);
-                      setGeolocationAccepted(true);
-                      if (e.target.value) fetchCountryData(e.target.value);
-                    }}
-                    className="w-full md:w-48 px-4 py-2.5 rounded-full border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 appearance-none bg-white text-blue-950 text-sm shadow-sm"
-                    aria-label={t('selectCountry')}
-                  >
-                    <option value="">{t('selectCountry')}</option>
-                    {countries.map(({ code, name }) => (
-                      <option key={code} value={code}>{name[i18n.language]}</option>
-                    ))}
-                  </select>
-                  <ChevronDown className="w-4 h-4 text-gray-500 absolute right-3 top-3 pointer-events-none" />
-                </div>
-                
-                <button
-                  onClick={handleGeolocation}
-                  className="p-2 bg-blue-100 hover:bg-blue-200 rounded-full transition-colors"
-                  disabled={isLoading}
-                  title={t('useGeolocation')}
-                >
-                  <FaMapMarkerAlt className="text-blue-600 w-5 h-5" />
-                </button>
-              </div>
-            </div>
-            {error && (
-              <div className="mt-2 text-red-500 text-sm text-center">
-                {error}
-              </div>
-            )}
-          </motion.div>
-          
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.1 }}
-            className="bg-white/95 p-4 md:p-6 rounded-2xl shadow-lg border border-gray-100 backdrop-blur-sm"
-          >
-            {geoData ? (
-              <MapContainer
-                center={[20, 0]}
-                zoom={2}
-                style={{ height: '300px', width: '100%' }}
-                className="rounded-lg border border-gray-200"
-              >
-                <TileLayer
-                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                />
-                <GeoJSON
-                  data={geoData}
-                  style={() => ({
-                    fillColor: '#3B82F6',
-                    weight: 1,
-                    opacity: 1,
-                    color: '#1E40AF',
-                    fillOpacity: 0.6,
-                  })}
-                  onEachFeature={(feature, layer) => {
-                    const countryCode = feature.properties.ISO_A2;
-                    layer.on({
-                      click: () => {
-                        setCountry(countryCode);
-                        fetchCountryData(countryCode);
-                      },
-                    });
-                    layer.bindPopup(
-                      countries.find((c) => c.code === countryCode)?.name[i18n.language || 'en'] ||
-                        feature.properties.name
-                    );
-                  }}
-                />
-                {Object.entries(countryCoordinates).map(([code, coords]) => (
-                  <Marker key={code} position={coords} icon={customIcon}>
-                    <Popup>
-                      {countries.find((c) => c.code === code)?.name[i18n.language || 'en'] || code}
-                    </Popup>
-                  </Marker>
-                ))}
-              </MapContainer>
-            ) : (
-              <div className="text-gray-900 text-center">{t('loadingMap')}</div>
-            )}
-          </motion.div>
-
-          {/* Country details */}
-          {country && (
-            <>
-              {/* Country title and service links */}
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.2 }}
-                className="bg-white/95 p-4 md:p-6 rounded-2xl shadow-lg border border-gray-100 backdrop-blur-sm flex justify-between items-center"
-              >
-                <h1 className="text-xl md:text-2xl font-bold text-gray-900">{t('countryDetailTitle', { country: countryName })}</h1>
-                <Link
-                  to={`/services/${country}`}
-                  className="text-lg font-semibold text-blue-600 hover:text-blue-700 transition-all duration-300"
-                >
-                  {t('services.title', { country: countryName })}
-                </Link>
-              </motion.div>
-
-              {/* Freedom ratings */}
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.3 }}
-                className="bg-white/95 p-4 md:p-6 rounded-2xl shadow-lg border border-gray-100 backdrop-blur-sm"
-              >
-                <h2 className="text-xl font-bold text-gray-900 mb-4">{t('freedomRatings')}</h2>
-                {isLoadingData ? (
-                  <div className="text-center py-4">
-                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500 mx-auto"></div>
-                    <p className="text-gray-600 mt-2">{t('loading')}</p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 gap-4">
-                    {['overall_freedom', 'speech_freedom', 'economic_freedom', 'political_freedom', 'human_rights_freedom'].map((key) => (
-                      <div key={key} className="relative group">
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="text-sm font-medium text-gray-900">{t(key)}</span>
-                          <span className="text-sm font-semibold text-blue-600">{freedomRatings[key]}/10</span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-3 mb-1">
-                          <div
-                            className="bg-gradient-to-r from-blue-500 to-blue-600 h-3 rounded-full transition-all duration-300"
-                            style={{ width: `${(parseFloat(freedomRatings[key]) / 10) * 100}%` }}
-                          ></div>
-                        </div>
-                        <div className="absolute left-0 top-full mt-1 hidden group-hover:block bg-white shadow-lg p-3 rounded-lg z-10 border border-gray-200 min-w-[200px]">
-                          <FaInfoCircle className="text-blue-600 text-sm inline mr-1" />
-                          <span className="text-xs text-gray-700">{t(`${key}Tooltip`)}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </motion.div>
-
-              {/* Social feed for the country */}
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.4 }}
-                className="bg-white/95 p-4 md:p-6 rounded-2xl shadow-lg border border-gray-100 backdrop-blur-sm"
-              >
-                <h2 className="text-xl font-bold text-gray-900 mb-4">{t('postsFromCountry', { country: countryName })}</h2>
-                <SocialFeed userId={null} countryCode={country} />
-              </motion.div>
-            </>
-          )}
-        </div>
-        
-        {/* Right panel - ComplaintForm and DonationSection (hidden on mobile devices) */}
-        {!isMobile && (
-          <div 
-            ref={rightColumnRef}
-            className="lg:col-span-3 space-y-4 overflow-y-auto"
-            style={{ maxHeight: 'calc(100vh - 80px)' }}
-          >
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.2 }}
-            >
-              <ComplaintForm setError={setError} error={error} />
-            </motion.div>
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.3 }}
-            >
-              <DonationSection />
-            </motion.div>
-
-            {/* List of users */}
-            {country && (
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.4 }}
-                className="bg-white/95 p-4 md:p-6 rounded-2xl shadow-lg border border-gray-100 backdrop-blur-sm"
-              >
-                <h3 className="text-lg font-medium text-gray-900 mb-4">{t('usersFromCountry', { country: countryName })}</h3>
-                {users.length === 0 ? (
-                  <p className="text-gray-500 text-center py-4">{t('noUsers')}</p>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {users.map((user) => (
-                      <div
-                        key={user.id}
-                        className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
-                        onClick={() => handleMemberClick(user.id)}
-                      >
-                        <img
-                          src={user.profile_picture || 'https://placehold.co/40x40'}
-                          alt={user.username}
-                          className="w-10 h-10 rounded-full"
-                        />
-                        <span className="text-gray-900 font-medium">
-                          {user.username || t('anonymous')}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </motion.div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Mobile Bottom Navigation */}
-      {isMobile && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-between py-3 px-6 z-30">
-          <button 
-            className="flex flex-col items-center text-xs text-gray-600"
-            onClick={() => navigate('/feed')}
-          >
-            <FaHome className="w-5 h-5 mb-1" />
-            <span>{t('home')}</span>
-          </button>
-          
-          <button 
-            className="flex flex-col items-center text-xs text-gray-600"
-            onClick={handleComplaintClick}
-          >
-            <IoMdMegaphone className="w-5 h-5 mb-1" />
-            <span>{t('complaints')}</span>
-          </button>
-          
-          <button 
-            className="flex flex-col items-center text-xs text-gray-600"
-            onClick={handleCreatePostFromSidebar}
-          >
-            <div className="relative">
-              <FaPlus className="w-5 h-5 mb-1" />
-            </div>
-            <span>{t('create')}</span>
-          </button>
-          
-          <button 
-            className="flex flex-col items-center text-xs text-gray-600"
-            onClick={handleDonationClick}
-          >
-            <BiSolidDonateHeart className="w-5 h-5 mb-1" />
-            <span>{t('donations')}</span>
-          </button>
-          
-          <button 
-            className="flex flex-col items-center text-xs text-gray-600"
-            onClick={() => navigate('/chat')}
-          >
-            <FaComments className="w-5 h-5 mb-1" />
-            <span>{t('chat')}</span>
-          </button>
-        </div>
-      )}
-
-      {/* Complaint Modal for Mobile */}
-      {showComplaintModal && isMobile && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end justify-center">
-          <div className="bg-white w-full max-h-[90vh] rounded-t-3xl overflow-y-auto">
-            <div className="sticky top-0 bg-white p-4 border-b border-gray-200 flex justify-between items-center rounded-t-3xl">
-              <h2 className="text-lg font-semibold">{t('complaint')}</h2>
-              <button 
-                onClick={() => setShowComplaintModal(false)}
-                className="p-2 rounded-full hover:bg-gray-100"
-              >
-                <FaTimes className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-4">
-              <ComplaintForm setError={setError} error={error} onClose={() => setShowComplaintModal(false)} />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Donation Modal for Mobile */}
-      {showDonationModal && isMobile && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end justify-center">
-          <div className="bg-white w-full max-h-[90vh] rounded-t-3xl overflow-y-auto">
-            <div className="sticky top-0 bg-white p-4 border-b border-gray-200 flex justify-between items-center rounded-t-3xl">
-              <h2 className="text-lg font-semibold">{t('donations')}</h2>
-              <button 
-                onClick={() => setShowDonationModal(false)}
-                className="p-2 rounded-full hover:bg-gray-100"
-              >
-                <FaTimes className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-4">
-              <DonationSection onClose={() => setShowDonationModal(false)} />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Post creation modal window */}
-      {showCreateModal && (
-        <CreatePostModal
-          showCreateModal={showCreateModal}
-          setShowCreateModal={setShowCreateModal}
-          newPostContent={newPostContent}
-          setNewPostContent={setNewPostContent}
-          newPostMedia={newPostMedia}
-          setNewPostMedia={setNewPostMedia}
-          mediaPreview={mediaPreview}
-          setMediaPreview={setMediaPreview}
-          selectedCountry={selectedCountry}
-          setSelectedCountry={setSelectedCountry}
-          error={createPostError}
-          setError={setCreatePostError}
-          loading={createPostLoading}
-          setLoading={setCreatePostLoading}
-          currentUser={currentUser}
-          navigate={navigate}
-        />
-      )}
-    </div>
+    <MainLayout 
+      currentUser={currentUser}
+    >
+      {countryContent}
+    </MainLayout>
   );
 }
 
