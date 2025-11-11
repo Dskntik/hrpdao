@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../utils/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import countries from '../utils/countries';
+import MainLayout from '../components/layout/MainLayout';
 
 // Lucide Icons
 import { 
@@ -46,18 +47,47 @@ function Complaint() {
   const [error, setError] = useState(null);
   const [isModerator, setIsModerator] = useState(false);
   const [user, setUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchUserCountry = async () => {
+    const fetchCurrentUser = async () => {
       try {
+        setLoading(true);
         const { data: { user }, error: authError } = await supabase.auth.getUser();
-        if (authError) throw authError;
+        
+        if (authError) {
+          console.error('Error retrieving user', authError);
+          setLoading(false);
+          return;
+        }
 
         if (user) {
           setUser(user);
-          // Перевірка чи користувач є модератором
           checkModeratorStatus(user);
-          
+
+          const { data: profile, error: profileError } = await supabase
+            .from('users')
+            .select('username, profile_picture, country, city, status, bio, social_links')
+            .eq('id', user.id)
+            .single();
+
+          if (profileError) {
+            console.error('Error loading profile:', profileError);
+            setCurrentUser(user);
+          } else {
+            setCurrentUser({ 
+              ...user, 
+              username: profile.username,
+              profile_picture: profile.profile_picture,
+              country: profile.country,
+              city: profile.city,
+              status: profile.status,
+              bio: profile.bio,
+              social_links: profile.social_links
+            });
+          }
+
           const { data, error } = await supabase
             .from('users')
             .select('country')
@@ -72,15 +102,16 @@ function Complaint() {
       } catch (err) {
         setError(err.message || t('error'));
         setFormData((prev) => ({ ...prev, country: 'UA' }));
+      } finally {
+        setLoading(false);
       }
     };
 
-    fetchUserCountry();
+    fetchCurrentUser();
   }, [t]);
 
   const checkModeratorStatus = async (user) => {
     try {
-      // Перевірка через метадані користувача або спеціальну таблицу
       const { data, error } = await supabase
         .from('users')
         .select('role')
@@ -91,7 +122,7 @@ function Complaint() {
         setIsModerator(data.role === 'moderator' || data.role === 'admin');
       }
     } catch (err) {
-      console.error('Помилка перевірки статусу модератора:', err);
+      console.error('Moderator status check error:', err);
     }
   };
 
@@ -196,7 +227,7 @@ function Complaint() {
         setSuccess(false);
       }, 2000);
     } catch (err) {
-      console.error('Помилка подачі скарги:', err);
+      console.error('Complaint submission error:', err);
       setError(err.message || t('complaintError'));
     } finally {
       setSubmitting(false);
@@ -211,7 +242,7 @@ function Complaint() {
     navigate('/violators');
   };
 
-  return (
+  const complaintContent = (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
@@ -239,7 +270,7 @@ function Complaint() {
 
       <div className="relative z-10">
         <p className="text-center mt-2 mb-4 text-blue-950 text-sm opacity-80">
-          {t('complaint.subtitle') || 'Поділіться своїми скаргами та допоможіть нам покращити наш сервіс'}
+          {t('complaint.subtitle') || 'Share your complaints'}
         </p>
         
         <div>
@@ -256,7 +287,7 @@ function Complaint() {
               <Check className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
               <div>
                 <p className="font-medium">{t('complaintSubmitted')}</p>
-                <p className="text-sm mt-1 text-green-700 opacity-90">{t('complaint.thankYou') || 'Дякуємо за ваш відгук!'}</p>
+                <p className="text-sm mt-1 text-green-700 opacity-90">{t('complaint.thankYou') || 'Thank you for your feedback!'}</p>
               </div>
             </motion.div>
           )}
@@ -269,7 +300,7 @@ function Complaint() {
             >
               <X className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
               <div>
-                <p className="font-medium">{t('error') || 'Помилка'}</p>
+                <p className="font-medium">{t('error') || 'Error'}</p>
                 <p className="text-sm mt-1 text-red-700 opacity-90">{error}</p>
               </div>
             </motion.div>
@@ -278,7 +309,7 @@ function Complaint() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-blue-950 mb-1.5">
-                {t('complaint.country') || 'Країна'}
+                {t('complaint.country') || 'Country'}
               </label>
               <div className="relative">
                 <select
@@ -286,11 +317,11 @@ function Complaint() {
                   value={formData.country}
                   onChange={handleInputChange}
                   className="w-full px-4 py-2.5 rounded-full border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 appearance-none bg-white text-blue-950 text-sm shadow-sm"
-                  aria-label={t('complaint.country') || 'Країна'}
+                  aria-label={t('complaint.country') || 'Country'}
                   required
                 >
                   <option value="" disabled>
-                    {t('complaint.selectCountry') || 'Оберіть країну'}
+                    {t('complaint.selectCountry') || 'Choose a country'}
                   </option>
                   {countries.map(({ code, name }) => (
                     <option key={code} value={code}>
@@ -305,7 +336,7 @@ function Complaint() {
             <div>
               <label className="block text-sm font-medium text-blue-950 mb-1.5 flex items-center gap-2">
                 <User className="w-4 h-4" />
-                {t('complaint.violatorName') || 'Можливе ім\'я порушника'}
+                {t('complaint.violatorName') || 'Possible name of the offender'}
               </label>
               <input
                 type="text"
@@ -313,7 +344,7 @@ function Complaint() {
                 value={isAnonymous ? 'Hidden' : formData.violator_name}
                 onChange={handleInputChange}
                 disabled={isAnonymous}
-                placeholder={t('complaint.violatorNamePlaceholder') || 'Введіть ім\'я або опишіть порушника'}
+                placeholder={t('complaint.violatorNamePlaceholder') || 'Enter name or describe the offender'}
                 className="w-full px-4 py-2.5 rounded-full border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 disabled:bg-gray-50 disabled:text-gray-500 text-blue-950 text-sm shadow-sm"
               />
             </div>
@@ -321,14 +352,14 @@ function Complaint() {
             <div>
               <label className="block text-sm font-medium text-blue-950 mb-1.5 flex items-center gap-2">
                 <Users className="w-4 h-4" />
-                {t('complaint.victimsInfo') || 'Дані осіб, які постраждали'}
+                {t('complaint.victimsInfo') || 'Data of the affected persons'}
               </label>
               <textarea
                 name="victims_info"
                 value={isAnonymous ? 'Hidden' : formData.victims_info}
                 onChange={handleInputChange}
                 disabled={isAnonymous}
-                placeholder={t('complaint.victimsInfoPlaceholder') || 'Опишіть постраждалих осіб (ім\'я, вік, стан тощо)'}
+                placeholder={t('complaint.victimsInfoPlaceholder') || 'Describe the affected persons (name, age, condition, etc.)'}
                 className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 resize-vertical min-h-[80px] disabled:bg-gray-50 disabled:text-gray-500 text-blue-950 text-sm shadow-sm"
                 rows={3}
               />
@@ -338,7 +369,7 @@ function Complaint() {
               <div>
                 <label className="block text-sm font-medium text-blue-950 mb-1.5 flex items-center gap-2">
                   <Calendar className="w-4 h-4" />
-                  {t('complaint.violationDate') || 'Дата порушення'}
+                  {t('complaint.violationDate') || 'Violation date'}
                 </label>
                 <input
                   type="date"
@@ -351,7 +382,7 @@ function Complaint() {
               <div>
                 <label className="block text-sm font-medium text-blue-950 mb-1.5 flex items-center gap-2">
                   <Clock className="w-4 h-4" />
-                  {t('complaint.violationTime') || 'Час порушення'}
+                  {t('complaint.violationTime') || 'Violation time'}
                 </label>
                 <input
                   type="time"
@@ -366,14 +397,14 @@ function Complaint() {
             <div>
               <label className="block text-sm font-medium text-blue-950 mb-1.5 flex items-center gap-2">
                 <MapPin className="w-4 h-4" />
-                {t('complaint.violationAddress') || 'Місце порушення'}
+                {t('complaint.violationAddress') || 'Violation location'}
               </label>
               <input
                 type="text"
                 name="violation_address"
                 value={formData.violation_address}
                 onChange={handleInputChange}
-                placeholder={t('complaint.violationAddressPlaceholder') || 'Введіть адресу або місце події'}
+                placeholder={t('complaint.violationAddressPlaceholder') || 'Enter address or location of the incident'}
                 className="w-full px-4 py-2.5 rounded-full border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-blue-950 text-sm shadow-sm"
               />
             </div>
@@ -381,13 +412,13 @@ function Complaint() {
             <div>
               <label className="block text-sm font-medium text-blue-950 mb-1.5 flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4" />
-                {t('complaint.violationAction') || 'Дія чи бездіяльність, що призвела до порушення'}
+                {t('complaint.violationAction') || 'Action or inaction that led to the violation'}
               </label>
               <textarea
                 name="violation_action"
                 value={formData.violation_action}
                 onChange={handleInputChange}
-                placeholder={t('complaint.violationActionPlaceholder') || 'Детально опишіть дію чи бездіяльність, яка призвела до порушення прав'}
+                placeholder={t('complaint.violationActionPlaceholder') || 'Describe in detail the action or inaction that led to the rights violation'}
                 className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 resize-vertical min-h-[100px] text-blue-950 text-sm shadow-sm"
                 rows={4}
                 required
@@ -396,13 +427,13 @@ function Complaint() {
 
             <div>
               <label className="block text-sm font-medium text-blue-950 mb-1.5">
-                {t('complaint.violationConsequences') || 'Наслідки порушення'}
+                {t('complaint.violationConsequences') || 'Consequences of the violation'}
               </label>
               <textarea
                 name="violation_consequences"
                 value={formData.violation_consequences}
                 onChange={handleInputChange}
-                placeholder={t('complaint.violationConsequencesPlaceholder') || 'Опишіть наслідки порушення прав'}
+                placeholder={t('complaint.violationConsequencesPlaceholder') || 'Describe the consequences of the rights violation'}
                 className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 resize-vertical min-h-[80px] text-blue-950 text-sm shadow-sm"
                 rows={3}
               />
@@ -410,27 +441,27 @@ function Complaint() {
 
             <div>
               <label className="block text-sm font-medium text-blue-950 mb-1.5">
-                {t('complaint.violationTools') || 'Знаряддя, засоби вчинення правопорушення'}
+                {t('complaint.violationTools') || 'Tools, means of committing the offense'}
               </label>
               <input
                 type="text"
                 name="violation_tools"
                 value={formData.violation_tools}
                 onChange={handleInputChange}
-                placeholder={t('complaint.violationToolsPlaceholder') || 'Опишіть засоби, які використовувались для порушення'}
+                placeholder={t('complaint.violationToolsPlaceholder') || 'Describe the tools used for the violation'}
                 className="w-full px-4 py-2.5 rounded-full border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-blue-950 text-sm shadow-sm"
               />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-blue-950 mb-1.5">
-                {t('complaint.additionalComments') || 'Додаткові коментарі'}
+                {t('complaint.additionalComments') || 'Additional comments'}
               </label>
               <textarea
                 name="additional_comments"
                 value={formData.additional_comments}
                 onChange={handleInputChange}
-                placeholder={t('complaint.additionalCommentsPlaceholder') || 'Будь-яка додаткова інформація, яка може бути корисною'}
+                placeholder={t('complaint.additionalCommentsPlaceholder') || 'Any additional information that may be useful'}
                 className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 resize-vertical min-h-[80px] text-blue-950 text-sm shadow-sm"
                 rows={3}
               />
@@ -444,7 +475,7 @@ function Complaint() {
                 name="description"
                 value={formData.description}
                 onChange={handleInputChange}
-                placeholder={t('complaint.descriptionPlaceholder') || 'Загальний опис ситуації...'}
+                placeholder={t('complaint.descriptionPlaceholder') || 'General description of the situation...'}
                 className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 resize-vertical min-h-[100px] text-blue-950 text-sm shadow-sm"
                 rows={4}
               />
@@ -460,7 +491,7 @@ function Complaint() {
                 value={isAnonymous ? 'Hidden' : formData.contact_info}
                 onChange={handleInputChange}
                 disabled={isAnonymous}
-                placeholder={t('complaint.contactPlaceholder') || 'Email або телефон'}
+                placeholder={t('complaint.contactPlaceholder') || 'Email or phone'}
                 className="w-full px-4 py-2.5 rounded-full border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 disabled:bg-gray-50 disabled:text-gray-500 text-blue-950 text-sm shadow-sm"
                 required={!isAnonymous}
               />
@@ -475,9 +506,9 @@ function Complaint() {
                   <div className="flex flex-col items-center justify-center">
                     <FileText className="w-5 h-5 mb-2 text-gray-500" />
                     <p className="text-sm text-gray-600 text-center">
-                      <span className="font-medium">{t('complaint.clickToUpload') || 'Натисніть для завантаження'}</span>
+                      <span className="font-medium">{t('complaint.clickToUpload') || 'Click to upload'}</span>
                       <br />
-                      <span className="text-xs opacity-80">{t('complaint.uploadRestrictions') || 'PNG, JPG, GIF, MP4, PDF (макс. 5MB)'}</span>
+                      <span className="text-xs opacity-80">{t('complaint.uploadRestrictions') || 'PNG, JPG, GIF, MP4, PDF (max. 5MB)'}</span>
                     </p>
                   </div>
                   <input 
@@ -492,7 +523,7 @@ function Complaint() {
               
               {evidenceFiles.length > 0 && (
                 <div className="mt-3 space-y-2">
-                  <p className="text-sm font-medium text-blue-950">{t('complaint.uploadedFiles') || 'Завантажені файли:'}</p>
+                  <p className="text-sm font-medium text-blue-950">{t('complaint.uploadedFiles') || 'Uploaded files:'}</p>
                   {evidenceFiles.map((file, index) => (
                     <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded-full text-sm shadow-sm">
                       <span className="text-gray-700 truncate max-w-xs">{file.name}</span>
@@ -500,7 +531,7 @@ function Complaint() {
                         type="button" 
                         onClick={() => removeFile(index)}
                         className="text-red-500 hover:text-red-700 transition-colors p-1"
-                        aria-label={t('removeFile') || 'Видалити файл'}
+                        aria-label={t('removeFile') || 'Remove file'}
                       >
                         <X className="w-4 h-4" />
                       </button>
@@ -509,8 +540,7 @@ function Complaint() {
                 </div>
               )}
             </div>
-            
-            {/* Анонімність */}
+
             <div className="flex items-center">
               <label className="relative flex items-center cursor-pointer">
                 <input
@@ -571,6 +601,22 @@ function Complaint() {
         </div>
       </div>
     </motion.div>
+  );
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-white to-gray-100 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
+
+  return (
+    <MainLayout 
+      currentUser={currentUser}
+    >
+      {complaintContent}
+    </MainLayout>
   );
 }
 
