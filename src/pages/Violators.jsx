@@ -14,6 +14,7 @@ import {
 import { supabase } from '../utils/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Shield, FileText, Video, MapPin, Calendar, Clock, User, Users, AlertTriangle } from 'lucide-react';
+import MainLayout from '../components/layout/MainLayout';
 
 function Violators() {
   const { t } = useTranslation();
@@ -25,14 +26,58 @@ function Violators() {
   const [viewMode, setViewMode] = useState('grid');
   const [searchTerm, setSearchTerm] = useState('');
   const [countryFilter, setCountryFilter] = useState('');
+  const [currentUser, setCurrentUser] = useState(null);
+  const [userLoading, setUserLoading] = useState(true);
 
   useEffect(() => {
     fetchComplaints();
+    fetchCurrentUser();
   }, []);
 
   useEffect(() => {
     filterComplaints();
   }, [complaints, searchTerm, countryFilter]);
+
+  const fetchCurrentUser = async () => {
+    try {
+      setUserLoading(true);
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      
+      if (authError) {
+        console.error('Error retrieving user:', authError);
+        setUserLoading(false);
+        return;
+      }
+
+      if (user) {
+        const { data: profile, error: profileError } = await supabase
+          .from('users')
+          .select('username, profile_picture, country, city, status, bio, social_links')
+          .eq('id', user.id)
+          .single();
+
+        if (profileError) {
+          console.error('Error loading profile:', profileError);
+          setCurrentUser(user);
+        } else {
+          setCurrentUser({ 
+            ...user, 
+            username: profile.username,
+            profile_picture: profile.profile_picture,
+            country: profile.country,
+            city: profile.city,
+            status: profile.status,
+            bio: profile.bio,
+            social_links: profile.social_links
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Error retrieving user data:', err);
+    } finally {
+      setUserLoading(false);
+    }
+  };
 
   const fetchComplaints = async () => {
     try {
@@ -364,22 +409,7 @@ function Violators() {
     );
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 py-8 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading data...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (viewMode === 'detail') {
-    return renderDetailView();
-  }
-
-  return (
+  const violatorsContent = (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
@@ -549,6 +579,28 @@ function Violators() {
         </div>
       </div>
     </motion.div>
+  );
+
+  if (userLoading || loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-white to-gray-100 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
+
+  if (viewMode === 'detail') {
+    return (
+      <MainLayout currentUser={currentUser}>
+        {renderDetailView()}
+      </MainLayout>
+    );
+  }
+
+  return (
+    <MainLayout currentUser={currentUser}>
+      {violatorsContent}
+    </MainLayout>
   );
 }
 
