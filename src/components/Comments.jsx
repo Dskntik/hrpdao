@@ -3,13 +3,11 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../utils/supabase';
 import { useTranslation } from 'react-i18next';
-import { FaCheckCircle, FaTimesCircle, FaEye, FaComment, FaShare, FaBookmark, FaTrash, FaEdit, FaReply } from 'react-icons/fa';
+import { CheckCircle, XCircle, Trophy, MessageSquare, Share, Bookmark, Trash2, Edit, Reply, Plus } from 'lucide-react';
 import { Dialog, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
-import Navbar from './Navbar';
-import Sidebar from './Sidebar';
-import ComplaintForm from './ComplaintForm';
-import DonationSection from './DonationSection';
+import MainLayout from '../components/layout/MainLayout';
+import EditPostModal from '../components/EditPostModal';
 
 function Comments() {
   const { t } = useTranslation();
@@ -21,14 +19,15 @@ function Comments() {
   const [currentUser, setCurrentUser] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [editPostId, setEditPostId] = useState(null);
-  const [editPostContent, setEditPostContent] = useState('');
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editCommentId, setEditCommentId] = useState(null);
   const [editCommentContent, setEditCommentContent] = useState('');
   const [isEditCommentModalOpen, setIsEditCommentModalOpen] = useState(false);
   const [replyCommentId, setReplyCommentId] = useState(null);
   const [newReply, setNewReply] = useState('');
+  const [isEditPostModalOpen, setIsEditPostModalOpen] = useState(false);
+  const [editPostContent, setEditPostContent] = useState('');
+  const [editPostMedia, setEditPostMedia] = useState(null);
+  const [editMediaPreview, setEditMediaPreview] = useState(null);
 
   // Notification creation feature
   const createNotification = async (userId, type, message, data = {}) => {
@@ -42,8 +41,6 @@ function Comments() {
           message,
           post_id: data.postId || null,
           comment_id: data.commentId || null,
-          community_id: data.communityId || null,
-          chat_id: data.chatId || null,
           is_read: false
         });
 
@@ -61,7 +58,35 @@ function Comments() {
         // Fetch current user
         const { data: { user }, error: userError } = await supabase.auth.getUser();
         if (userError) throw userError;
-        setCurrentUser(user);
+        
+        if (user) {
+          // We get additional profile data from the database
+          const { data: profile, error: profileError } = await supabase
+            .from('users')
+            .select('username, profile_picture, country, city, status, bio, social_links')
+            .eq('id', user.id)
+            .single();
+
+          if (profileError) {
+            console.error('Error loading profile:', profileError);
+            // If the profile is not found, we use only data from auth
+            setCurrentUser(user);
+          } else {
+            // Combining data from auth and profile
+            setCurrentUser({ 
+              ...user, 
+              username: profile.username,
+              profile_picture: profile.profile_picture,
+              country: profile.country,
+              city: profile.city,
+              status: profile.status,
+              bio: profile.bio,
+              social_links: profile.social_links
+            });
+          }
+        } else {
+          setCurrentUser(null);
+        }
 
         // Fetch post with reactions and comment count
         const { data: postData, error: postError } = await supabase
@@ -76,6 +101,8 @@ function Comments() {
           .single();
         if (postError) throw postError;
         setPost(postData);
+        setEditPostContent(postData.content);
+        setEditMediaPreview(postData.media_url);
 
         // Fetch comments with reactions and replies
         const { data: commentData, error: commentError } = await supabase
@@ -99,6 +126,162 @@ function Comments() {
 
     fetchData();
   }, [postId, t]);
+
+  const handleEditPost = (post) => {
+    setEditPostContent(post.content);
+    setEditPostMedia(null);
+    setEditMediaPreview(post.media_url);
+    setIsEditPostModalOpen(true);
+  };
+
+  const handleUpdatePost = async () => {
+    if (!currentUser) {
+      setError(t('authRequired'));
+      navigate('/');
+      return;
+    }
+    if (!editPostContent && !editPostMedia && !editMediaPreview) {
+      setError(t('emptyPost'));
+      return;
+    }
+    try {
+      setLoading(true);
+      let mediaUrl = editMediaPreview;
+      let mediaType = post?.media_type || 'text';
+
+      if (editPostMedia) {
+        if (!editPostMedia.type.match(/^(image\/|video\/|.+\.pdf$)/)) {
+          setError(t('invalidFileType'));
+          setLoading(false);
+          return;
+        }
+        if (editPostMedia.size > 10 * 1024 * 1024) {
+          setError(t('fileTooLarge'));
+          setLoading(false);
+          return;
+        }
+        const currentPost = post;
+        if (currentPost?.media_url) {
+          const oldFilePath = currentPost.media_url.split('/media/')[1];
+          if (oldFilePath) {
+            const { error: deleteError } = await supabase.storage
+              .from('media')
+              .remove([oldFilePath]);
+            if (deleteError) {
+              console.error('Помилка видалення попереднього медіа:', deleteError);
+            }
+          }
+        }
+        const fileExt = editPostMedia.name.split('.').pop();
+        const fileName = `${currentUser.id}/${Date.now()}_${editPostMedia.name}`;
+        const { error: uploadError } = await supabase.storage
+          .from('media')
+          .upload(fileName, editPostMedia);
+        if (uploadError) throw uploadError;
+        const { data: { publicUrl } } = supabase.storage
+          .from('media')
+          .getPublicUrl(fileName);
+        mediaUrl = publicUrl;
+        mediaType = editPostMedia.type.startsWith('image') ? 'image' : editPostMedia.type.startsWith('video') ? 'video' : 'document';
+      } else if (!editPostMedia && !editMediaPreview) {
+        const currentPost = post;
+        if (currentPost?.media_url) {
+          const oldFilePath = currentPost.media_url.split('/media/')[1];
+          if (oldFilePath) {
+            const { error: deleteError } = await supabase.storage
+              .from('media')
+              .remove([oldFilePath]);
+            if (deleteError) {
+              console.error('Помилка видалення попереднього медіа:', deleteError);
+            }
+          }
+        }
+        mediaUrl = null;
+        mediaType = 'text';
+      }
+
+      const { error } = await supabase
+        .from('posts')
+        .update({
+          content: editPostContent,
+          media_url: mediaUrl,
+          media_type: mediaType,
+        })
+        .eq('id', postId);
+      if (error) throw error;
+
+      const hashtags = editPostContent.match(/#[^\s#]+/g) || [];
+      const { error: deleteHashtagError } = await supabase
+        .from('post_hashtags')
+        .delete()
+        .eq('post_id', postId);
+      if (deleteHashtagError) throw deleteHashtagError;
+
+      if (hashtags.length > 0) {
+        const hashtagInserts = hashtags.map(tag => ({
+          post_id: postId,
+          tag: tag.slice(1).toLowerCase(),
+        }));
+        const { error: hashtagError } = await supabase.from('post_hashtags').insert(hashtagInserts);
+        if (hashtagError) throw hashtagError;
+      }
+
+      // Update post data
+      const { data: postData, error: postError } = await supabase
+        .from('posts')
+        .select(`
+          *,
+          users(username, profile_picture, country),
+          reactions(reaction_type, user_id),
+          comments(count)
+        `)
+        .eq('id', postId)
+        .single();
+      if (postError) throw postError;
+      setPost(postData);
+
+      setIsEditPostModalOpen(false);
+      alert(t('postUpdated') || 'Пост успішно оновлено');
+    } catch (err) {
+      console.error('Помилка редагування поста:', err);
+      setError(t('postError'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeletePost = async () => {
+    if (!currentUser) {
+      setError(t('authRequired'));
+      navigate('/');
+      return;
+    }
+    if (!window.confirm(t('confirmDeletePost'))) return;
+    try {
+      setLoading(true);
+      const currentPost = post;
+      if (currentPost?.media_url) {
+        const filePath = currentPost.media_url.split('/media/')[1];
+        if (filePath) {
+          const { error: deleteError } = await supabase.storage
+            .from('media')
+            .remove([filePath]);
+          if (deleteError) {
+            console.error('Помилка видалення медіа:', deleteError);
+          }
+        }
+      }
+      const { error } = await supabase.from('posts').delete().eq('id', postId);
+      if (error) throw error;
+      navigate('/');
+      alert(t('postDeleted'));
+    } catch (err) {
+      console.error('Помилка видалення поста:', err);
+      setError(t('postError'));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleComment = async () => {
     if (!currentUser) {
@@ -360,7 +543,20 @@ function Comments() {
         
         // Create a notification for the author of a comment about a like
         if (comment && comment.user_id !== currentUser.id) {
-          const reactionText = reactionType === 'true' ? t('likedYourComment') : t('dislikedYourComment');
+          let reactionText = '';
+          switch (reactionType) {
+            case 'true':
+              reactionText = t('likedYourComment');
+              break;
+            case 'false':
+              reactionText = t('dislikedYourComment');
+              break;
+            case 'top':
+              reactionText = t('toppedYourComment');
+              break;
+            default:
+              reactionText = t('reactedToYourComment');
+          }
           await createNotification(
             comment.user_id,
             'comment_like',
@@ -385,73 +581,6 @@ function Comments() {
     } catch (err) {
       console.error('Помилка обробки реакції на коментар:', err);
       setError(err.message || t('reactionError'));
-    }
-  };
-
-  const handleEditPost = (postId, content) => {
-    setEditPostId(postId);
-    setEditPostContent(content);
-    setIsEditModalOpen(true);
-  };
-
-  const handleUpdatePost = async () => {
-    if (!currentUser) {
-      setError(t('authRequired'));
-      navigate('/');
-      return;
-    }
-    try {
-      setLoading(true);
-      const { error } = await supabase
-        .from('posts')
-        .update({ content: editPostContent })
-        .eq('id', editPostId)
-        .eq('user_id', currentUser.id);
-      if (error) throw error;
-      
-      // Updating the post
-      const { data: postData, error: postError } = await supabase
-        .from('posts')
-        .select(`
-          *,
-          users(username, profile_picture, country),
-          reactions(reaction_type, user_id),
-          comments(count)
-        `)
-        .eq('id', postId)
-        .single();
-      if (postError) throw postError;
-      setPost(postData);
-      
-      setIsEditModalOpen(false);
-      setEditPostId(null);
-      setEditPostContent('');
-    } catch (err) {
-      console.error('Помилка оновлення поста:', err);
-      setError(t('updateError'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDeletePost = async () => {
-    if (!currentUser) {
-      setError(t('authRequired'));
-      navigate('/');
-      return;
-    }
-    if (!window.confirm(t('confirmDeletePost'))) return;
-    try {
-      const { error } = await supabase
-        .from('posts')
-        .delete()
-        .eq('id', postId)
-        .eq('user_id', currentUser.id);
-      if (error) throw error;
-      navigate('/');
-    } catch (err) {
-      console.error('Помилка видалення поста:', err);
-      setError(t('deleteError'));
     }
   };
 
@@ -504,8 +633,8 @@ function Comments() {
             case 'false':
               reactionText = t('dislikedYourPost');
               break;
-            case 'focus':
-              reactionText = t('focusedOnYourPost');
+            case 'top':
+              reactionText = t('toppedYourPost');
               break;
             default:
               reactionText = t('reactedToYourPost');
@@ -603,64 +732,39 @@ function Comments() {
     }
   };
 
-  const renderPostContent = (content) => {
-    if (!content) return null;
-    const hashtagRegex = /#[^\s#]+/g;
-    const parts = content.split(hashtagRegex);
-    const hashtags = content.match(hashtagRegex) || [];
-    let result = [];
-    parts.forEach((part, index) => {
-      result.push(<span key={`part-${index}`}>{part}</span>);
-      if (hashtags[index]) {
-        result.push(
-          <button
-            key={`hashtag-${index}`}
-            className="text-blue-500 hover:underline"
-            onClick={() => navigate(`/hashtag/${hashtags[index].slice(1)}`)}
-          >
-            {hashtags[index]}
-          </button>
-        );
-      }
-    });
-    return result;
-  };
-
   const renderComments = (comments, parentId = null, depth = 0) => {
     const filteredComments = comments.filter((comment) => comment.parent_comment_id === parentId);
     
     if (filteredComments.length === 0) return null;
 
     return filteredComments.map((comment) => (
-      <div key={comment.id} className={`${depth > 0 ? 'ml-6 border-l-2 border-gray-200 pl-4' : ''} mt-3 bg-white p-4 rounded-lg shadow-sm relative`}>
-        {/* Nesting depth indicator */}
-        {depth > 0 && (
-          <div className="absolute -left-2 top-4 w-2 h-2 bg-gray-400 rounded-full"></div>
-        )}
-        
+      <div key={comment.id} className={`${depth > 0 ? 'ml-6 border-l-2 border-gray-200 pl-4' : ''} mt-3 bg-white p-4 rounded-lg shadow-md relative`}>
+                
         {currentUser?.id === comment.user_id && (
           <div className="absolute top-3 right-3 flex gap-2">
             <button
               onClick={() => handleEditComment(comment.id, comment.content)}
-              className="text-gray-500 hover:text-blue-500 transition-colors"
+              className="w-8 h-8 flex items-center justify-center bg-gray-200 hover:bg-gray-300 rounded-full transition-colors"
               aria-label={t('editComment')}
             >
-              <FaEdit className="h-4 w-4" />
+              <Edit className="h-4 w-4 text-gray-600" />
             </button>
             <button
               onClick={() => handleDeleteComment(comment.id)}
-              className="text-gray-500 hover:text-red-500 transition-colors"
+              className="w-8 h-8 flex items-center justify-center bg-gray-200 hover:bg-gray-300 rounded-full transition-colors"
               aria-label={t('deleteComment')}
             >
-              <FaTrash className="h-4 w-4" />
+              <Trash2 className="h-4 w-4 text-gray-600" />
             </button>
           </div>
         )}
         
         <div className="flex items-center mb-2">
-          <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs font-bold mr-2">
-            {comment.users?.username?.charAt(0)?.toUpperCase() || 'A'}
-          </div>
+          <img
+            src={comment.users?.profile_picture || 'https://placehold.co/40x40'}
+            alt={t('profilePicture')}
+            className="w-8 h-8 rounded-full mr-2"
+          />
           <div>
             <p className="font-bold text-sm text-gray-800">{comment.users?.username || t('anonymous')}</p>
             <p className="text-xs text-gray-500">{new Date(comment.created_at).toLocaleString()}</p>
@@ -672,33 +776,51 @@ function Comments() {
         <div className="flex items-center gap-3 mt-2">
           <button
             onClick={() => handleCommentReaction(comment.id, 'true')}
-            className={`flex items-center text-xs transition-colors ${
+            className={`flex items-center gap-1 px-2 py-1 rounded transition-colors ${
               comment.comment_reactions?.some((r) => r.user_id === currentUser?.id && r.reaction_type === 'true')
-                ? 'text-green-700 font-semibold'
-                : 'text-green-500 hover:text-green-600'
+                ? 'text-green-700 bg-green-100 font-semibold'
+                : 'text-green-600 hover:bg-green-100'
             }`}
           >
-            <FaCheckCircle className="h-3 w-3 mr-1" /> 
-            {comment.comment_reactions?.filter((r) => r.reaction_type === 'true').length || 0}
+            <CheckCircle className="h-4 w-4" />
+            <span className="text-xs font-medium">
+              {t('true')} {comment.comment_reactions?.filter((r) => r.reaction_type === 'true').length || 0}
+            </span>
           </button>
           
           <button
             onClick={() => handleCommentReaction(comment.id, 'false')}
-            className={`flex items-center text-xs transition-colors ${
+            className={`flex items-center gap-1 px-2 py-1 rounded transition-colors ${
               comment.comment_reactions?.some((r) => r.user_id === currentUser?.id && r.reaction_type === 'false')
-                ? 'text-red-700 font-semibold'
-                : 'text-red-500 hover:text-red-600'
+                ? 'text-red-700 bg-red-100 font-semibold'
+                : 'text-red-600 hover:bg-red-100'
             }`}
           >
-            <FaTimesCircle className="h-3 w-3 mr-1" /> 
-            {comment.comment_reactions?.filter((r) => r.reaction_type === 'false').length || 0}
+            <XCircle className="h-4 w-4" />
+            <span className="text-xs font-medium">
+              {t('false')} {comment.comment_reactions?.filter((r) => r.reaction_type === 'false').length || 0}
+            </span>
+          </button>
+
+          <button
+            onClick={() => handleCommentReaction(comment.id, 'top')}
+            className={`flex items-center gap-1 px-2 py-1 rounded transition-colors ${
+              comment.comment_reactions?.some((r) => r.user_id === currentUser?.id && r.reaction_type === 'top')
+                ? 'text-yellow-700 bg-yellow-100 font-semibold'
+                : 'text-yellow-600 hover:bg-yellow-100'
+            }`}
+          >
+            <Trophy className="h-4 w-4" />
+            <span className="text-xs font-medium">
+              {t('top')} {comment.comment_reactions?.filter((r) => r.reaction_type === 'top').length || 0}
+            </span>
           </button>
           
           <button
             onClick={() => setReplyCommentId(comment.id)}
             className="flex items-center text-xs text-blue-500 hover:text-blue-600 transition-colors"
           >
-            <FaReply className="h-3 w-3 mr-1" /> {t('reply')}
+            <Reply className="h-3 w-3 mr-1" /> {t('reply')}
           </button>
         </div>
 
@@ -715,13 +837,13 @@ function Comments() {
             <div className="flex gap-2 mt-2">
               <button
                 onClick={() => handleReply(comment.id)}
-                className="bg-blue-500 text-white px-3 py-1 rounded-md text-sm hover:bg-blue-600 transition-colors"
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md"
               >
                 {t('postReply')}
               </button>
               <button
                 onClick={() => setReplyCommentId(null)}
-                className="bg-gray-200 text-gray-700 px-3 py-1 rounded-md text-sm hover:bg-gray-300 transition-colors"
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-200 hover:bg-gray-300 rounded-md"
               >
                 {t('cancel')}
               </button>
@@ -736,7 +858,7 @@ function Comments() {
   };
 
   if (loading) return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+    <div className="min-h-screen bg-gradient-to-br from-white to-gray-100 flex items-center justify-center">
       <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
     </div>
   );
@@ -744,226 +866,167 @@ function Comments() {
   if (error) return <div className="p-4 text-red-500">{t('error')}: {error}</div>;
   if (!post) return <div className="p-4">{t('noPost')}</div>;
 
-  return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <Navbar currentUser={currentUser} />
-      
-      <div className="w-full mx-auto px-4 grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1 mt-4">
-        {/* Left panel */}
-        <div className="lg:col-span-3">
-          <Sidebar currentUser={currentUser} addPostButton={false} />
-        </div>
-        
-        {/* Central panel */}
-        <div className="lg:col-span-6">
-          <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-            {/* Post */}
-            <div className="bg-white p-4 rounded-lg shadow-sm relative mb-6">
-              {currentUser?.id === post.user_id && (
-                <div className="absolute top-2 right-2 flex gap-2">
-                  <button
-                    onClick={() => handleEditPost(post.id, post.content)}
-                    className="text-gray-500 hover:text-blue-500 transition-colors"
-                    aria-label={t('editPost')}
-                  >
-                    <FaEdit className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() => handleDeletePost()}
-                    className="text-gray-500 hover:text-red-500 transition-colors"
-                    aria-label={t('deletePost')}
-                  >
-                    <FaTrash className="h-4 w-4" />
-                  </button>
-                </div>
-              )}
-              <div className="flex items-center mb-2">
-                <img
-                  src={post.users?.profile_picture || 'https://placehold.co/40x40'}
-                  alt={t('profilePicture')}
-                  className="w-10 h-10 rounded-full mr-2"
-                />
-                <div>
-                  <p className="font-bold">{post.users?.username || t('anonymous')}</p>
-                  <p className="text-sm text-gray-500">{post.users?.country || t('unknown')} • {new Date(post.created_at).toLocaleString()}</p>
-                </div>
-              </div>
-              <p>{renderPostContent(post.content)}</p>
-              {post.media_url && (
-                post.media_type === 'image' ? (
-                  <img src={post.media_url} alt={t('postMedia')} className="w-full mt-2 rounded-lg" />
-                ) : (
-                  <video src={post.media_url} controls className="w-full mt-2 rounded-lg" aria-label={t('postMedia')} />
-                )
-              )}
-              <div className="flex items-center gap-1.5 mt-3 max-w-full min-w-0">
-                <button
-                  onClick={() => handleReaction(post.id, 'true')}
-                  className={`post-action-btn flex items-center text-xs transition-colors ${
-                    post.reactions?.some((r) => r.user_id === currentUser?.id && r.reaction_type === 'true')
-                      ? 'text-green-700 font-semibold'
-                      : 'text-green-500 hover:text-green-600'
-                  }`}
-                  aria-label={`${t('true')} ${t('reaction')}`}
-                >
-                  <FaCheckCircle className="h-3 w-3 mr-1" /> {t('true')} {post.reactions?.filter((r) => r.reaction_type === 'true').length || 0}
-                </button>
-                <button
-                  onClick={() => handleReaction(post.id, 'false')}
-                  className={`post-action-btn flex items-center text-xs transition-colors ${
-                    post.reactions?.some((r) => r.user_id === currentUser?.id && r.reaction_type === 'false')
-                      ? 'text-red-700 font-semibold'
-                      : 'text-red-500 hover:text-red-600'
-                  }`}
-                  aria-label={`${t('false')} ${t('reaction')}`}
-                >
-                  <FaTimesCircle className="h-3 w-3 mr-1" /> {t('false')} {post.reactions?.filter((r) => r.reaction_type === 'false').length || 0}
-                </button>
-                <button
-                  onClick={() => handleReaction(post.id, 'focus')}
-                  className={`post-action-btn flex items-center text-xs transition-colors ${
-                    post.reactions?.some((r) => r.user_id === currentUser?.id && r.reaction_type === 'focus')
-                      ? 'text-blue-700 font-semibold'
-                      : 'text-blue-500 hover:text-blue-600'
-                  }`}
-                  aria-label={`${t('focus')} ${t('reaction')}`}
-                >
-                  <FaEye className="h-3 w-3 mr-1" /> {t('focus')} {post.reactions?.filter((r) => r.reaction_type === 'focus').length || 0}
-                </button>
-                <button
-                  className="post-action-btn flex items-center text-xs transition-colors text-gray-500 hover:text-gray-600"
-                  aria-label={t('comment')}
-                >
-                  <FaComment className="h-3 w-3 mr-1" /> {t('comment')} {post.comments?.count || 0}
-                </button>
-                <button
-                  onClick={() => handleShare()}
-                  className="post-action-btn flex items-center text-xs transition-colors text-gray-500 hover:text-gray-600"
-                  aria-label={t('share')}
-                >
-                  <FaShare className="h-3 w-3 mr-1" /> {t('share')}
-                </button>
-                <button
-                  onClick={() => handleSave()}
-                  className="post-action-btn flex items-center text-xs transition-colors text-gray-500 hover:text-gray-600"
-                  aria-label={t('save')}
-                >
-                  <FaBookmark className="h-3 w-3 mr-1" /> {t('save')}
-                </button>
-              </div>
-            </div>
-
-            {/* New Comment Input */}
-            {currentUser && (
-              <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 mb-6">
-                <h3 className="text-lg font-semibold text-gray-800 mb-3">{t('addComment')}</h3>
-                <textarea
-                  value={newComment}
-                  onChange={(e) => setNewComment(e.target.value)}
-                  placeholder={t('newCommentPlaceholder')}
-                  className="w-full resize-y border border-gray-300 rounded-md p-2 mb-2 text-sm"
-                  rows="3"
-                  aria-label={t('newCommentPlaceholder')}
-                />
-                <button
-                  onClick={handleComment}
-                  className="w-full bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-all duration-300"
-                  disabled={loading}
-                  aria-label={t('postComment')}
-                >
-                  {t('postComment')}
-                </button>
-              </div>
-            )}
-
-            {/* Comments */}
-            <div className="space-y-4 mt-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-3">
-                {t('comments')} ({comments.length})
-              </h3>
-              
-              {comments.filter(comment => !comment.parent_comment_id).length === 0 ? (
-                <p className="text-gray-500 text-center py-4">{t('noComments')}</p>
-              ) : (
-                <div className="space-y-4">
-                  {renderComments(comments)}
-                </div>
-              )}
-            </div>
+  const commentsContent = (
+    <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
+      {/* Post */}
+      <div className="bg-white p-4 rounded-lg shadow-md relative mb-6">
+        {currentUser?.id === post.user_id && (
+          <div className="absolute top-2 right-2 flex gap-2">
+            <button
+              onClick={() => handleEditPost(post)}
+              className="w-8 h-8 flex items-center justify-center bg-gray-200 hover:bg-gray-300 rounded-full transition-colors"
+              aria-label={t('editPost')}
+            >
+              <Edit className="h-4 w-4 text-gray-600" />
+            </button>
+            <button
+              onClick={() => handleDeletePost()}
+              className="w-8 h-8 flex items-center justify-center bg-gray-200 hover:bg-gray-300 rounded-full transition-colors"
+              aria-label={t('deletePost')}
+            >
+              <Trash2 className="h-4 w-4 text-gray-600" />
+            </button>
+          </div>
+        )}
+        <div className="flex items-center mb-2">
+          <img
+            src={post.users?.profile_picture || 'https://placehold.co/40x40'}
+            alt={t('profilePicture')}
+            className="w-10 h-10 rounded-full mr-2"
+          />
+          <div>
+            <p className="font-bold">{post.users?.username || t('anonymous')}</p>
+            <p className="text-sm text-gray-500">{post.users?.country || t('unknown')} • {new Date(post.created_at).toLocaleString()}</p>
           </div>
         </div>
-
-        {/* Right panel */}
-        <div className="lg:col-span-3 space-y-6">
-          <div>
-            <ComplaintForm setError={setError} error={error} />
+        <p>{post.content}</p>
+        {post.media_url && (
+          post.media_type === 'image' ? (
+            <img src={post.media_url} alt={t('postMedia')} className="w-full mt-2 rounded-lg" />
+          ) : (
+            <video src={post.media_url} controls className="w-full mt-2 rounded-lg" aria-label={t('postMedia')} />
+          )
+        )}
+        <div className="flex flex-wrap justify-between items-center mt-4">
+          {/* Left side - reactions */}
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => handleReaction(post.id, 'true')}
+              className={`flex items-center gap-1 px-2 py-1 rounded transition-colors ${
+                post.reactions?.some((r) => r.user_id === currentUser?.id && r.reaction_type === 'true')
+                  ? 'text-green-700 bg-green-100 font-semibold'
+                  : 'text-green-600 hover:bg-green-100'
+              }`}
+              aria-label={`${t('true')} ${t('reaction')}`}
+            >
+              <CheckCircle className="h-4 w-4" />
+              <span className="text-xs font-medium">
+                {t('true')} {post.reactions?.filter((r) => r.reaction_type === 'true').length || 0}
+              </span>
+            </button>
+            <button
+              onClick={() => handleReaction(post.id, 'false')}
+              className={`flex items-center gap-1 px-2 py-1 rounded transition-colors ${
+                post.reactions?.some((r) => r.user_id === currentUser?.id && r.reaction_type === 'false')
+                  ? 'text-red-700 bg-red-100 font-semibold'
+                  : 'text-red-600 hover:bg-red-100'
+              }`}
+              aria-label={`${t('false')} ${t('reaction')}`}
+            >
+              <XCircle className="h-4 w-4" />
+              <span className="text-xs font-medium">
+                {t('false')} {post.reactions?.filter((r) => r.reaction_type === 'false').length || 0}
+              </span>
+            </button>
+            <button
+              onClick={() => handleReaction(post.id, 'top')}
+              className={`flex items-center gap-1 px-2 py-1 rounded transition-colors ${
+                post.reactions?.some((r) => r.user_id === currentUser?.id && r.reaction_type === 'top')
+                  ? 'text-yellow-700 bg-yellow-100 font-semibold'
+                  : 'text-yellow-600 hover:bg-yellow-100'
+              }`}
+              aria-label={`${t('top')} ${t('reaction')}`}
+            >
+              <Trophy className="h-4 w-4" />
+              <span className="text-xs font-medium">
+                {t('top')} {post.reactions?.filter((r) => r.reaction_type === 'top').length || 0}
+              </span>
+            </button>
           </div>
-          <div>
-            <DonationSection />
+
+          {/* Right side - other actions */}
+          <div className="flex flex-wrap gap-2">
+            <button
+              className="flex items-center gap-1 text-gray-600 hover:text-gray-800 transition-colors"
+              aria-label={t('comment')}
+            >
+              <MessageSquare className="h-4 w-4" />
+              <span className="text-xs font-medium">{post.comments?.count || 0}</span>
+            </button>
+            <button
+              onClick={() => handleShare()}
+              className="text-gray-600 hover:text-gray-800 transition-colors"
+              aria-label={t('share')}
+            >
+              <Share className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => handleSave()}
+              className="text-gray-600 hover:text-gray-800 transition-colors"
+              aria-label={t('save')}
+            >
+              <Bookmark className="h-4 w-4" />
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Edit Post Modal */}
-      <Transition appear show={isEditModalOpen} as={Fragment}>
-        <Dialog as="div" className="relative z-10" onClose={() => setIsEditModalOpen(false)}>
-          <Transition.Child
-            as={Fragment}
-            enter="ease-out duration-300"
-            enterFrom="opacity-0"
-            enterTo="opacity-100"
-            leave="ease-in duration-200"
-            leaveFrom="opacity-100"
-            leaveTo="opacity-0"
+      {/* New Comment Input */}
+      {currentUser && (
+        <div className="bg-white p-4 rounded-lg shadow-md border border-gray-200 mb-6">
+          <h3 className="text-lg font-semibold text-gray-800 mb-3">{t('addComment')}</h3>
+          <textarea
+            value={newComment}
+            onChange={(e) => setNewComment(e.target.value)}
+            placeholder={t('newCommentPlaceholder')}
+            className="w-full resize-y border border-gray-300 rounded-md p-2 mb-2 text-sm"
+            rows="3"
+            aria-label={t('newCommentPlaceholder')}
+          />
+          <button
+            onClick={handleComment}
+            className="w-full px-4 py-3 rounded-full font-semibold text-white transition-all duration-300 flex items-center justify-center gap-2 text-sm shadow-md hover:shadow-xl bg-gradient-to-r from-blue-900 via-blue-800 to-blue-700 hover:from-blue-950 hover:via-blue-900 hover:to-blue-800"
+            disabled={loading}
+            aria-label={t('postComment')}
           >
-            <div className="fixed inset-0 bg-black bg-opacity-25" />
-          </Transition.Child>
-          <div className="fixed inset-0 overflow-y-auto">
-            <div className="flex min-h-full items-center justify-center p-4 text-center">
-              <Transition.Child
-                as={Fragment}
-                enter="ease-out duration-300"
-                enterFrom="opacity-0 scale-95"
-                enterTo="opacity-100 scale-100"
-                leave="ease-in duration-200"
-                leaveFrom="opacity-100 scale-100"
-                leaveTo="opacity-0 scale-95"
-              >
-                <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all">
-                  <Dialog.Title as="h3" className="text-lg font-medium leading-6 text-gray-900">
-                    {t('editPost')}
-                  </Dialog.Title>
-                  <div className="mt-2">
-                    <textarea
-                      value={editPostContent}
-                      onChange={(e) => setEditPostContent(e.target.value)}
-                      className="w-full resize-y border border-gray-300 rounded-md p-2 text-sm"
-                      rows="4"
-                      aria-label={t('editPost')}
-                    />
-                  </div>
-                  <div className="mt-4 flex gap-2">
-                    <button
-                      type="button"
-                      className="inline-flex justify-center rounded-md border border-transparent bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-                      onClick={handleUpdatePost}
-                    >
-                      {t('save')}
-                    </button>
-                    <button
-                      type="button"
-                      className="inline-flex justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-                      onClick={() => setIsEditModalOpen(false)}
-                    >
-                      {t('cancel')}
-                    </button>
-                  </div>
-                </Dialog.Panel>
-              </Transition.Child>
-            </div>
+            <Plus className="w-4 h-4" />
+            {t('postComment')}
+          </button>
+        </div>
+      )}
+
+      {/* Comments */}
+      <div className="space-y-4 mt-6">
+        <h3 className="text-lg font-semibold text-gray-800 mb-3">
+          {t('comments')} ({comments.length})
+        </h3>
+        
+        {comments.filter(comment => !comment.parent_comment_id).length === 0 ? (
+          <p className="text-gray-500 text-center py-4">{t('noComments')}</p>
+        ) : (
+          <div className="space-y-4">
+            {renderComments(comments)}
           </div>
-        </Dialog>
-      </Transition>
+        )}
+      </div>
+    </div>
+  );
+
+  return (
+    <MainLayout 
+      currentUser={currentUser}
+    >
+      {commentsContent}
 
       {/* Edit Comment Modal */}
       <Transition appear show={isEditCommentModalOpen} as={Fragment}>
@@ -1025,7 +1088,21 @@ function Comments() {
           </div>
         </Dialog>
       </Transition>
-    </div>
+
+      {/* Edit Post Modal */}
+      <EditPostModal
+        isOpen={isEditPostModalOpen}
+        onClose={() => setIsEditPostModalOpen(false)}
+        editPostContent={editPostContent}
+        setEditPostContent={setEditPostContent}
+        editPostMedia={editPostMedia}
+        setEditPostMedia={setEditPostMedia}
+        editMediaPreview={editMediaPreview}
+        setEditMediaPreview={setEditMediaPreview}
+        handleUpdatePost={handleUpdatePost}
+        loading={loading}
+      />
+    </MainLayout>
   );
 }
 
