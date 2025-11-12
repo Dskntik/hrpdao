@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { supabase } from '../utils/supabase';
@@ -14,22 +14,13 @@ import {
   FaSignOutAlt,
   FaPlus,
 } from 'react-icons/fa';
-import countries from '../utils/countries';
-import CreatePostModal from './CreatePostModal';
 
-function Sidebar({ currentUser, onShowCreateModal }) {
+function Sidebar({ currentUser }) {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  
-  // States for create post modal
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [newPostContent, setNewPostContent] = useState('');
-  const [newPostMedia, setNewPostMedia] = useState(null);
-  const [mediaPreview, setMediaPreview] = useState(null);
-  const [selectedCountry, setSelectedCountry] = useState(currentUser?.country || '');
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [userProfile, setUserProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   const navItems = [
     { label: 'feed', path: '/feed', icon: <FaHome size={18} /> },
@@ -41,6 +32,49 @@ function Sidebar({ currentUser, onShowCreateModal }) {
     { label: 'notifications', path: '/notifications', icon: <FaBell size={18} /> },
     { label: 'settings', path: '/settings', icon: <FaCog size={18} /> },
   ];
+
+  // Завантаження профілю користувача
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      if (!currentUser) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const { data: profileData, error } = await supabase
+          .from('users')
+          .select('username, profile_picture, country, city, status, bio')
+          .eq('id', currentUser.id)
+          .single();
+
+        if (error) throw error;
+
+        setUserProfile(profileData || {
+          username: '',
+          profile_picture: '',
+          country: '',
+          city: '',
+          status: '',
+          bio: ''
+        });
+      } catch (err) {
+        console.error('Помилка завантаження профілю:', err);
+        setUserProfile({
+          username: '',
+          profile_picture: '',
+          country: '',
+          city: '',
+          status: '',
+          bio: ''
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUserProfile();
+  }, [currentUser]);
 
   const handleLogout = async () => {
     try {
@@ -69,6 +103,18 @@ function Sidebar({ currentUser, onShowCreateModal }) {
     return country ? country[i18n.language] || country.en : countryCode;
   };
 
+  if (loading) {
+    return (
+      <div className="bg-white p-4 rounded-lg shadow-md">
+        <div className="animate-pulse">
+          <div className="h-4 bg-gray-200 rounded mb-2"></div>
+          <div className="h-4 bg-gray-200 rounded mb-2"></div>
+          <div className="h-4 bg-gray-200 rounded"></div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-white p-4 rounded-lg shadow-md">
       <nav className="flex flex-col gap-2">
@@ -87,88 +133,56 @@ function Sidebar({ currentUser, onShowCreateModal }) {
           </button>
         ))}
         
+        {/* Кнопка створення посту */}
         <button
-          onClick={() => setShowCreateModal(true)}
+          onClick={() => navigate('/create-post')}
           className="w-full px-4 py-3 rounded-full font-semibold text-white transition-all duration-300 flex items-center justify-center gap-2 text-sm shadow-md hover:shadow-xl bg-gradient-to-r from-blue-900 via-blue-800 to-blue-700 hover:from-blue-950 hover:via-blue-900 hover:to-blue-800"
           aria-label={t('createPost')}
         >
           <FaPlus className="w-4 h-4" />
           {t('createPost') || 'Додати пост'}
         </button>
-      </nav>
 
-      {currentUser && (
-        <div className="mt-6 pt-4 border-t border-gray-200">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center flex-1 min-w-0">
-              {currentUser.profile_picture ? (
-                <img
-                  src={currentUser.profile_picture}
-                  alt={currentUser.username || t('user')}
-                  className="w-10 h-10 rounded-full mr-3"
-                />
-              ) : (
-                <div className="w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center mr-3">
-                  <span className="text-gray-600 text-sm">
-                    {currentUser.email?.charAt(0).toUpperCase()}
-                  </span>
-                </div>
-              )}
+        {/* СЕКЦІЯ: Інформація про користувача та кнопка виходу */}
+        {currentUser && userProfile && (
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <div className="flex items-center space-x-3 mb-3">
+              {/* Аватарка */}
+              <img
+                src={userProfile.profile_picture || 'https://placehold.co/64x64'}
+                alt={t('profilePicture')}
+                className="w-12 h-12 rounded-full object-cover border-2 border-gray-200"
+              />
+              
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-700 truncate">
-                  {currentUser.username || currentUser.email}
+                {/* Ім'я користувача */}
+                <h3 className="text-sm font-bold text-gray-900 truncate">
+                  {userProfile.username || currentUser.email || t('anonymous')}
+                </h3>
+                
+                {/* Вид діяльності */}
+                <p className="text-xs text-blue-600 font-medium truncate">
+                  {userProfile.status || t('noStatus')}
                 </p>
+                
+                {/* Країна */}
                 <p className="text-xs text-gray-600 truncate">
-                  {currentUser.status || t('member')}
+                  {userProfile.country ? getCountryName(userProfile.country) : t('unknown')}
                 </p>
               </div>
             </div>
-            
+
+            {/* Кнопка виходу */}
             <button
               onClick={handleLogout}
-              className="ml-3 p-2 text-gray-500 hover:text-red-600 hover:bg-gray-100 rounded-full transition-colors duration-200"
-              aria-label={t('logout')}
-              title={t('logout')}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-full font-medium text-sm hover:bg-gray-200 transition-all duration-200 mt-2"
             >
-              <FaSignOutAlt size={16} />
+              <FaSignOutAlt className="w-3 h-3" />
+              {t('logout') || 'Вийти'}
             </button>
           </div>
-          
-          {currentUser.country && (
-            <div className="mt-2">
-              <button
-                onClick={() => navigate('/country')}
-                className="flex items-center text-xs text-gray-500 hover:text-accent transition-colors duration-200 p-2 rounded-full hover:bg-gray-100"
-                title={t('viewCountry')}
-              >
-                <FaGlobe size={12} className="mr-1" />
-                <span>{getCountryName(currentUser.country)}</span>
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {showCreateModal && (
-        <CreatePostModal
-          showCreateModal={showCreateModal}
-          setShowCreateModal={setShowCreateModal}
-          newPostContent={newPostContent}
-          setNewPostContent={setNewPostContent}
-          newPostMedia={newPostMedia}
-          setNewPostMedia={setNewPostMedia}
-          mediaPreview={mediaPreview}
-          setMediaPreview={setMediaPreview}
-          selectedCountry={selectedCountry}
-          setSelectedCountry={setSelectedCountry}
-          error={error}
-          setError={setError}
-          loading={loading}
-          setLoading={setLoading}
-          currentUser={currentUser}
-          navigate={navigate}
-        />
-      )}
+        )}
+      </nav>
     </div>
   );
 }
