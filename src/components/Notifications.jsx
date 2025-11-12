@@ -23,10 +23,7 @@ import {
 } from 'react-icons/fa';
 import { formatDistanceToNow } from 'date-fns';
 import { uk, enUS } from 'date-fns/locale';
-import Navbar from './Navbar';
-import Sidebar from './Sidebar';
-import ComplaintForm from './ComplaintForm';
-import DonationSection from './DonationSection';
+import MainLayout from '../components/layout/MainLayout';
 
 function Notifications() {
   const { t, i18n } = useTranslation();
@@ -38,13 +35,15 @@ function Notifications() {
   const [filter, setFilter] = useState('all');
   const [retryCount, setRetryCount] = useState(0);
   const [showCreateModal, setShowCreateModal] = useState(false);
-
-  const leftColumnRef = useRef(null);
-  const centerColumnRef = useRef(null);
-  const rightColumnRef = useRef(null);
-  const isScrolling = useRef(false);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
   const locale = i18n.language === 'uk' ? uk : enUS;
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     const fetchCurrentUser = async () => {
@@ -60,7 +59,7 @@ function Notifications() {
             .single();
           
           if (profileError) {
-            console.error('Помилка завантаження профілю:', profileError);
+            console.error('Error loading profile:', profileError);
             return user;
           }
           
@@ -69,7 +68,7 @@ function Notifications() {
         
         return null;
       } catch (err) {
-        console.error('Помилка отримання користувача:', err);
+        console.error('Error retrieving user:', err);
         setError(t('authError'));
         navigate('/');
         return null;
@@ -103,96 +102,6 @@ function Notifications() {
       };
     };
   }, [t, navigate, retryCount]);
-
-  useEffect(() => {
-    setTimeout(() => {
-      setupSynchronizedScrolling();
-    }, 100);
-
-    return () => {
-      if (leftColumnRef.current) {
-        leftColumnRef.current.removeEventListener('scroll', handleLeftScroll);
-      }
-      if (centerColumnRef.current) {
-        centerColumnRef.current.removeEventListener('scroll', handleCenterScroll);
-      }
-      if (rightColumnRef.current) {
-        rightColumnRef.current.removeEventListener('scroll', handleRightScroll);
-      }
-    };
-  }, [loading]);
-
-  const setupSynchronizedScrolling = () => {
-    const leftColumn = leftColumnRef.current;
-    const centerColumn = centerColumnRef.current;
-    const rightColumn = rightColumnRef.current;
-
-    if (leftColumn && centerColumn && rightColumn) {
-      leftColumn.addEventListener('scroll', handleLeftScroll);
-      centerColumn.addEventListener('scroll', handleCenterScroll);
-      rightColumn.addEventListener('scroll', handleRightScroll);
-    }
-  };
-
-  const handleLeftScroll = (e) => {
-    if (isScrolling.current) return;
-    isScrolling.current = true;
-
-    const leftColumn = leftColumnRef.current;
-    const centerColumn = centerColumnRef.current;
-    const rightColumn = rightColumnRef.current;
-
-    if (leftColumn && centerColumn && rightColumn) {
-      const scrollPercentage = leftColumn.scrollTop / (leftColumn.scrollHeight - leftColumn.clientHeight);
-      
-      centerColumn.scrollTop = scrollPercentage * (centerColumn.scrollHeight - centerColumn.clientHeight);
-      rightColumn.scrollTop = scrollPercentage * (rightColumn.scrollHeight - rightColumn.clientHeight);
-    }
-
-    setTimeout(() => {
-      isScrolling.current = false;
-    }, 50);
-  };
-
-  const handleCenterScroll = (e) => {
-    if (isScrolling.current) return;
-    isScrolling.current = true;
-
-    const leftColumn = leftColumnRef.current;
-    const centerColumn = centerColumnRef.current;
-    const rightColumn = rightColumnRef.current;
-
-    if (leftColumn && centerColumn && rightColumn) {
-      const scrollPercentage = centerColumn.scrollTop / (centerColumn.scrollHeight - centerColumn.clientHeight);
-      
-      leftColumn.scrollTop = scrollPercentage * (leftColumn.scrollHeight - leftColumn.clientHeight);
-      rightColumn.scrollTop = scrollPercentage * (rightColumn.scrollHeight - rightColumn.clientHeight);
-    }
-
-    setTimeout(() => {
-      isScrolling.current = false;
-    }, 50);
-  };
-
-  const handleRightScroll = (e) => {
-    if (isScrolling.current) return;
-    isScrolling.current = true;
-
-    const leftColumn = leftColumnRef.current;
-    const centerColumn = centerColumnRef.current;
-    const rightColumn = rightColumnRef.current;
-
-    if (leftColumn && centerColumn && rightColumn) {
-      const scrollPercentage = rightColumn.scrollTop / (rightColumn.scrollHeight - rightColumn.clientHeight);
-      
-      leftColumn.scrollTop = scrollPercentage * (leftColumn.scrollHeight - leftColumn.clientHeight);
-      centerColumn.scrollTop = scrollPercentage * (centerColumn.scrollHeight - centerColumn.clientHeight);
-    }
-
-    setTimeout(() => {
-      isScrolling.current = false;
-    }, 50);
-  };
 
   const setupRealtimeNotifications = (userId) => {
     const notificationsSubscription = supabase
@@ -477,87 +386,69 @@ function Notifications() {
     setLoading(true);
   };
 
-  const handleCreatePostFromSidebar = () => {
-    setShowCreateModal(true);
-  };
-
-  if (loading) return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-    </div>
-  );
-  
-  return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <Navbar currentUser={currentUser} />
-      
-      <div className="w-full mx-auto px-4 grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 mt-4">
-        {/* Left panel */}
-        <div 
-          ref={leftColumnRef}
-          className="lg:col-span-3 overflow-y-auto"
-          style={{ maxHeight: 'calc(100vh - 80px)' }}
-        >
-          <Sidebar currentUser={currentUser} onShowCreateModal={handleCreatePostFromSidebar} />
-        </div>
-        
-        {/* Central panel */}
-        <div 
-          ref={centerColumnRef}
-          className="lg:col-span-6 overflow-y-auto"
-          style={{ maxHeight: 'calc(100vh - 80px)' }}
-        >
-          <div className="bg-white/95 p-6 rounded-2xl shadow-lg border border-blue-100 backdrop-blur-sm">
-            <div className="flex items-center justify-between mb-6">
-              <h1 className="text-2xl font-bold text-blue-950">{t('notifications')}</h1>
-              
-              <div className="flex items-center gap-3">
+  const notificationsContent = (
+    <div className="min-h-screen bg-gray-50 py-4 sm:py-8">
+      <div className="max-w-4xl mx-auto px-3 sm:px-4">
+        <div className="bg-white/95 p-4 sm:p-6 rounded-2xl shadow-lg border border-blue-100 backdrop-blur-sm">
+          {/* Заголовок та керування - оптимізовано для мобільного */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+            <h1 className="text-xl sm:text-2xl font-bold text-blue-950 text-center sm:text-left">
+              {t('notifications')}
+            </h1>
+            
+            <div className="flex flex-col xs:flex-row items-center gap-2 sm:gap-3 w-full sm:w-auto">
+              <div className="flex items-center gap-2 w-full xs:w-auto">
                 <select
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
-                  className="px-4 py-2.5 rounded-full border border-gray-200 bg-gray-50 text-blue-950 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                  className="flex-1 xs:flex-none px-3 py-2 text-sm rounded-full border border-gray-200 bg-gray-50 text-blue-950 shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
                 >
                   <option value="all">{t('allNotifications')}</option>
                   <option value="unread">{t('unreadNotifications')}</option>
                   <option value="read">{t('readNotifications')}</option>
                 </select>
                 
+                <button
+                  onClick={retryFetch}
+                  className="p-2 text-blue-600 hover:text-blue-800 transition-colors rounded-full hover:bg-blue-100 flex-shrink-0 border border-blue-200"
+                  title={t('retry')}
+                >
+                  <FaSync className="text-sm sm:text-base" />
+                </button>
+              </div>
+              
+              <div className="flex items-center gap-2 w-full xs:w-auto justify-center sm:justify-start">
                 {notifications.some(notif => !notif.is_read) && (
                   <button
                     onClick={markAllAsRead}
-                    className="px-4 py-2.5 bg-gradient-to-r from-blue-900 via-blue-800 to-blue-700 text-white rounded-full text-sm hover:from-blue-950 hover:via-blue-900 hover:to-blue-800 transition-all duration-300 shadow-md hover:shadow-lg"
+                    className="flex-1 xs:flex-none px-3 py-2 bg-gradient-to-r from-blue-900 via-blue-800 to-blue-700 text-white rounded-full text-xs sm:text-sm hover:from-blue-950 hover:via-blue-900 hover:to-blue-800 transition-all duration-300 shadow-md hover:shadow-lg whitespace-nowrap"
                   >
-                    {t('markAllAsRead')}
+                    {isMobile ? t('markAll') : t('markAllAsRead')}
                   </button>
                 )}
-                
-                <button
-                  onClick={retryFetch}
-                  className="p-2 text-blue-600 hover:text-blue-800 transition-colors rounded-full hover:bg-blue-100"
-                  title={t('retry')}
-                >
-                  <FaSync />
-                </button>
               </div>
             </div>
+          </div>
 
-            {error && (
-              <div className="bg-red-50 border border-red-200 rounded-2xl p-4 mb-6">
-                <div className="flex items-center">
-                  <FaExclamationCircle className="text-red-500 mr-3" />
-                  <span className="text-red-700">{error}</span>
-                </div>
-                <button
-                  onClick={retryFetch}
-                  className="mt-2 text-sm text-red-600 hover:text-red-800"
-                >
-                  {t('retry')}
-                </button>
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-2xl p-3 sm:p-4 mb-6">
+              <div className="flex items-center">
+                <FaExclamationCircle className="text-red-500 mr-3 flex-shrink-0" />
+                <span className="text-red-700 text-sm sm:text-base">{error}</span>
               </div>
-            )}
+              <button
+                onClick={retryFetch}
+                className="mt-2 text-sm text-red-600 hover:text-red-800"
+              >
+                {t('retry')}
+              </button>
+            </div>
+          )}
 
+          {/* Список сповіщень з оптимізацією прокрутки */}
+          <div className="max-h-[60vh] sm:max-h-none overflow-y-auto">
             {filteredNotifications.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
+              <div className="text-center py-8 sm:py-12 text-gray-500 text-sm sm:text-base">
                 {filter === 'unread' 
                   ? t('noUnreadNotifications') 
                   : filter === 'read' 
@@ -566,28 +457,28 @@ function Notifications() {
                 }
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-2 sm:space-y-3">
                 {filteredNotifications.map((notification) => (
                   <div
                     key={notification.id}
-                    className={`p-4 rounded-2xl border transition-all duration-200 cursor-pointer group backdrop-blur-sm ${
+                    className={`p-3 sm:p-4 rounded-2xl border transition-all duration-200 cursor-pointer group backdrop-blur-sm ${
                       notification.is_read
                         ? 'bg-white/95 border-blue-100 hover:border-blue-200'
                         : 'bg-blue-50/95 border-blue-200 hover:border-blue-300'
                     } hover:shadow-lg`}
                     onClick={() => handleNotificationClick(notification)}
                   >
-                    <div className="flex items-start gap-4">
-                      <div className="flex-shrink-0 mt-1 text-lg">
+                    <div className="flex items-start gap-3 sm:gap-4">
+                      <div className="flex-shrink-0 mt-0.5 sm:mt-1 text-base sm:text-lg">
                         {getNotificationIcon(notification.type)}
                       </div>
                       
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm text-blue-950 leading-relaxed">
+                        <p className="text-xs sm:text-sm text-blue-950 leading-relaxed break-words">
                           {getNotificationMessage(notification, t)}
                         </p>
                         
-                        <p className="text-xs text-blue-600 mt-2">
+                        <p className="text-xs text-blue-600 mt-1 sm:mt-2">
                           {formatDistanceToNow(new Date(notification.created_at), {
                             addSuffix: true,
                             locale
@@ -595,17 +486,17 @@ function Notifications() {
                         </p>
                       </div>
                       
-                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-1 sm:gap-2 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
                         {!notification.is_read && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               markAsRead(notification.id);
                             }}
-                            className="p-2 text-green-500 hover:text-green-700 hover:bg-green-50 rounded-full transition-colors shadow-sm"
+                            className="p-1.5 sm:p-2 text-green-500 hover:text-green-700 hover:bg-green-50 rounded-full transition-colors shadow-sm"
                             title={t('markAsRead')}
                           >
-                            <FaCheck size={14} />
+                            <FaCheck size={12} className="sm:w-3.5 sm:h-3.5" />
                           </button>
                         )}
                         
@@ -614,10 +505,10 @@ function Notifications() {
                             e.stopPropagation();
                             deleteNotification(notification.id);
                           }}
-                          className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-full transition-colors shadow-sm"
+                          className="p-1.5 sm:p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-full transition-colors shadow-sm"
                           title={t('deleteNotification')}
                         >
-                          <FaTrash size={14} />
+                          <FaTrash size={12} className="sm:w-3.5 sm:h-3.5" />
                         </button>
                       </div>
                     </div>
@@ -627,22 +518,25 @@ function Notifications() {
             )}
           </div>
         </div>
-
-        {/* Right panel */}
-        <div 
-          ref={rightColumnRef}
-          className="lg:col-span-3 space-y-4 overflow-y-auto"
-          style={{ maxHeight: 'calc(100vh - 80px)' }}
-        >
-          <div>
-            <ComplaintForm setError={setError} error={error} />
-          </div>
-          <div>
-            <DonationSection />
-          </div>
-        </div>
       </div>
     </div>
+  );
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-white to-gray-100 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
+
+  return (
+    <MainLayout 
+      currentUser={currentUser}
+      showRightSidebar={!isMobile} // Приховуємо праву панель на мобільних
+    >
+      {notificationsContent}
+    </MainLayout>
   );
 }
 
