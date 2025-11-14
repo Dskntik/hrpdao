@@ -20,8 +20,58 @@ import {
   User,
   Users,
   AlertTriangle,
-  Settings
+  Settings,
+  Search
 } from 'lucide-react';
+
+const geocodeAddress = async (address, countryCode = '') => {
+  try {
+    let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`;
+
+    if (countryCode) {
+      url += `&countrycodes=${countryCode.toLowerCase()}`;
+    }
+    
+    const response = await fetch(url);
+    const data = await response.json();
+    
+    if (data && data.length > 0) {
+      return {
+        lat: parseFloat(data[0].lat),
+        lng: parseFloat(data[0].lon),
+        address: data[0].display_name
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('Geocoding error:', error);
+    return null;
+  }
+};
+
+const searchAddresses = async (query, countryCode = '') => {
+  if (query.length < 3) return []; 
+  
+  try {
+    let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1`;
+
+    if (countryCode) {
+      url += `&countrycodes=${countryCode.toLowerCase()}`;
+    }
+    
+    const response = await fetch(url);
+    const data = await response.json();
+    
+    return data.map(item => ({
+      display_name: item.display_name,
+      lat: parseFloat(item.lat),
+      lon: parseFloat(item.lon)
+    }));
+  } catch (error) {
+    console.error('Address search error:', error);
+    return [];
+  }
+};
 
 function Complaint() {
   const { t, i18n } = useTranslation();
@@ -37,7 +87,6 @@ function Complaint() {
     violation_action: '',
     violation_consequences: '',
     violation_tools: '',
-    additional_comments: '',
     description: '',
   });
   const [isAnonymous, setIsAnonymous] = useState(false);
@@ -49,6 +98,13 @@ function Complaint() {
   const [user, setUser] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [geocoding, setGeocoding] = useState(false);
+
+  const [addressQuery, setAddressQuery] = useState('');
+  const [addressSuggestions, setAddressSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [searchingAddress, setSearchingAddress] = useState(false);
+  const [validAddressSelected, setValidAddressSelected] = useState(false);
 
   useEffect(() => {
     const fetchCurrentUser = async () => {
@@ -129,6 +185,61 @@ function Complaint() {
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
+
+    if (name === 'country') {
+      setAddressQuery('');
+      setAddressSuggestions([]);
+      setShowSuggestions(false);
+      setValidAddressSelected(false);
+    }
+  };
+
+  const handleAddressChange = async (e) => {
+    const value = e.target.value;
+    setAddressQuery(value);
+    setFormData((prev) => ({ ...prev, violation_address: value }));
+    setValidAddressSelected(false);
+
+    if (value.length >= 3) {
+      setSearchingAddress(true);
+
+      const countryCode = formData.country;
+      const suggestions = await searchAddresses(value, countryCode);
+      
+      setAddressSuggestions(suggestions);
+      setShowSuggestions(true);
+      setSearchingAddress(false);
+    } else {
+      setAddressSuggestions([]);
+      setShowSuggestions(false);
+    }
+  };
+
+  const handleAddressSelect = (suggestion) => {
+    setFormData((prev) => ({ 
+      ...prev, 
+      violation_address: suggestion.display_name 
+    }));
+    setAddressQuery(suggestion.display_name);
+    setShowSuggestions(false);
+    setAddressSuggestions([]);
+    setValidAddressSelected(true);
+  };
+
+  const validateAddress = async () => {
+    // Адреса тепер обов'язкова
+    if (!formData.violation_address || formData.violation_address.trim() === '') {
+      return false;
+    }
+
+    if (!validAddressSelected && addressQuery.length > 0) {
+      // Геокодуємо адресу для перевірки валідності
+      const countryCode = formData.country;
+      const geocodingResult = await geocodeAddress(formData.violation_address, countryCode);
+      return geocodingResult !== null;
+    }
+
+    return validAddressSelected;
   };
 
   const handleFileChange = (e) => {
@@ -169,7 +280,30 @@ function Complaint() {
       return;
     }
 
+    const isAddressValid = await validateAddress();
+    if (!isAddressValid) {
+      setError(t('complaint.invalidAddress') || 'Please enter a valid address or select one from the suggestions');
+      setSubmitting(false);
+      return;
+    }
+
     try {
+      let coordinates = null;
+      let geocodedAddress = null;
+      
+      if (formData.violation_address && formData.violation_address.trim() !== '') {
+        setGeocoding(true);
+
+        const countryCode = formData.country;
+        const geocodingResult = await geocodeAddress(formData.violation_address, countryCode);
+        
+        if (geocodingResult) {
+          coordinates = { lat: geocodingResult.lat, lng: geocodingResult.lng };
+          geocodedAddress = geocodingResult.address;
+        }
+        setGeocoding(false);
+      }
+
       let evidenceUrls = [];
       if (evidenceFiles.length > 0) {
         const fileUploads = evidenceFiles.map(async (file) => {
@@ -184,23 +318,23 @@ function Complaint() {
 
       const complaintData = {
         user_id: user.id,
-        full_name: isAnonymous ? 'Anonymous' : null,
         country: formData.country,
-        contact_info: isAnonymous ? 'Hidden' : formData.contact_info,
-        violator_name: isAnonymous ? 'Hidden' : formData.violator_name,
-        victims_info: isAnonymous ? 'Hidden' : formData.victims_info,
+        contact_info: isAnonymous ? 'Hidden' : formData.contact_info, 
+        violator_name: formData.violator_name, 
+        victims_info: formData.victims_info, 
         violation_date: formData.violation_date || null,
         violation_time: formData.violation_time || null,
         violation_address: formData.violation_address,
         violation_action: formData.violation_action,
         violation_consequences: formData.violation_consequences,
         violation_tools: formData.violation_tools,
-        additional_comments: formData.additional_comments,
         content: formData.description,
         evidence_urls: evidenceUrls.length > 0 ? evidenceUrls : null,
         is_anonymous: isAnonymous,
         status: 'pending',
         created_at: new Date().toISOString(),
+        coordinates: coordinates,
+        geocoded_address: geocodedAddress,
       };
 
       const { error } = await supabase.from('complaints').insert(complaintData);
@@ -218,11 +352,12 @@ function Complaint() {
         violation_action: '',
         violation_consequences: '',
         violation_tools: '',
-        additional_comments: '',
         description: '' 
       });
+      setAddressQuery('');
       setEvidenceFiles([]);
       setIsAnonymous(false);
+      setValidAddressSelected(false);
       setTimeout(() => {
         setSuccess(false);
       }, 2000);
@@ -231,6 +366,7 @@ function Complaint() {
       setError(err.message || t('complaintError'));
     } finally {
       setSubmitting(false);
+      setGeocoding(false);
     }
   };
 
@@ -240,6 +376,15 @@ function Complaint() {
 
   const navigateToViolators = () => {
     navigate('/violators');
+  };
+
+  const navigateToViolationsMap = () => {
+    navigate('/violations-map');
+  };
+
+  const getCurrentCountryName = () => {
+    const country = countries.find(c => c.code === formData.country);
+    return country ? (country.name[i18n.language] || country.name.en) : '';
   };
 
   const complaintContent = (
@@ -310,6 +455,7 @@ function Complaint() {
             <div>
               <label className="block text-sm font-medium text-blue-950 mb-1.5">
                 {t('complaint.country') || 'Country'}
+                <span className="text-red-500 ml-1">*</span>
               </label>
               <div className="relative">
                 <select
@@ -341,11 +487,10 @@ function Complaint() {
               <input
                 type="text"
                 name="violator_name"
-                value={isAnonymous ? 'Hidden' : formData.violator_name}
+                value={formData.violator_name}
                 onChange={handleInputChange}
-                disabled={isAnonymous}
                 placeholder={t('complaint.violatorNamePlaceholder') || 'Enter name or describe the offender'}
-                className="w-full px-4 py-2.5 rounded-full border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 disabled:bg-gray-50 disabled:text-gray-500 text-blue-950 text-sm shadow-sm"
+                className="w-full px-4 py-2.5 rounded-full border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-blue-950 text-sm shadow-sm"
               />
             </div>
 
@@ -356,12 +501,11 @@ function Complaint() {
               </label>
               <textarea
                 name="victims_info"
-                value={isAnonymous ? 'Hidden' : formData.victims_info}
+                value={formData.victims_info}
                 onChange={handleInputChange}
-                disabled={isAnonymous}
                 placeholder={t('complaint.victimsInfoPlaceholder') || 'Describe the affected persons (name, age, condition, etc.)'}
-                className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 resize-vertical min-h-[80px] disabled:bg-gray-50 disabled:text-gray-500 text-blue-950 text-sm shadow-sm"
-                rows={3}
+                className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 resize-vertical min-h-[40px] text-blue-950 text-sm shadow-sm"
+                rows={2}
               />
             </div>
 
@@ -394,33 +538,111 @@ function Complaint() {
               </div>
             </div>
 
-            <div>
+            <div className="relative">
               <label className="block text-sm font-medium text-blue-950 mb-1.5 flex items-center gap-2">
                 <MapPin className="w-4 h-4" />
                 {t('complaint.violationAddress') || 'Violation location'}
+                <span className="text-red-500 ml-1">*</span>
+                {formData.country && (
+                  <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full ml-2">
+                    {getCurrentCountryName()}
+                  </span>
+                )}
               </label>
-              <input
-                type="text"
-                name="violation_address"
-                value={formData.violation_address}
-                onChange={handleInputChange}
-                placeholder={t('complaint.violationAddressPlaceholder') || 'Enter address or location of the incident'}
-                className="w-full px-4 py-2.5 rounded-full border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-blue-950 text-sm shadow-sm"
-              />
+              <div className="relative">
+                <input
+                  type="text"
+                  name="violation_address"
+                  value={addressQuery}
+                  onChange={handleAddressChange}
+                  placeholder={
+                    formData.country 
+                      ? `${t('complaint.violationAddressPlaceholder') || 'Enter address in'} ${getCurrentCountryName()}` 
+                      : t('complaint.violationAddressPlaceholder') || 'Enter address or location of the incident'
+                  }
+                  className={`w-full px-4 py-2.5 rounded-full border focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-blue-950 text-sm shadow-sm pr-10 ${
+                    addressQuery && !validAddressSelected && addressSuggestions.length === 0 
+                      ? 'border-orange-500' 
+                      : addressQuery && validAddressSelected 
+                      ? 'border-green-500' 
+                      : 'border-gray-200'
+                  }`}
+                  disabled={!formData.country}
+                  required
+                />
+                {!formData.country && (
+                  <div className="absolute inset-0 bg-gray-50/50 rounded-full flex items-center justify-center">
+                    <span className="text-gray-500 text-sm">Select country first</span>
+                  </div>
+                )}
+                {searchingAddress && (
+                  <div className="absolute right-3 top-3">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+                  </div>
+                )}
+                {!searchingAddress && addressQuery.length > 0 && formData.country && (
+                  <>
+                    {validAddressSelected ? (
+                      <Check className="w-4 h-4 text-green-500 absolute right-3 top-3" />
+                    ) : (
+                      <Search className="w-4 h-4 text-gray-400 absolute right-3 top-3" />
+                    )}
+                  </>
+                )}
+              </div>
+ 
+              {showSuggestions && addressSuggestions.length > 0 && (
+                <motion.div 
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-2xl shadow-lg max-h-60 overflow-y-auto"
+                >
+                  <div className="p-2 bg-blue-50 text-blue-700 text-xs font-medium border-b border-blue-100">
+                    Searching in {getCurrentCountryName()}
+                  </div>
+                  {addressSuggestions.map((suggestion, index) => (
+                    <button
+                      key={index}
+                      type="button"
+                      onClick={() => handleAddressSelect(suggestion)}
+                      className="w-full px-4 py-3 text-left hover:bg-blue-50 transition-colors duration-200 border-b border-gray-100 last:border-b-0 text-sm text-blue-950"
+                    >
+                      <div className="flex items-start gap-2">
+                        <MapPin className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                        <span>{suggestion.display_name}</span>
+                      </div>
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+              
+              <p className="text-xs text-gray-500 mt-1">
+                {formData.country 
+                  ? `${t('complaint.addressGeocodingInfo') || 'Start typing address (min 3 characters) - searching in'} ${getCurrentCountryName()}`
+                  : t('complaint.selectCountryFirst') || 'Please select a country first to enable address search'
+                }
+                <span className="text-red-500 ml-1">*</span>
+              </p>
+              {addressQuery && !validAddressSelected && addressSuggestions.length === 0 && (
+                <p className="text-xs text-orange-600 mt-1">
+                  {t('complaint.selectValidAddress') || 'Please select a valid address from the suggestions or enter a complete address'}
+                </p>
+              )}
             </div>
 
             <div>
               <label className="block text-sm font-medium text-blue-950 mb-1.5 flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4" />
                 {t('complaint.violationAction') || 'Action or inaction that led to the violation'}
+                <span className="text-red-500 ml-1">*</span>
               </label>
               <textarea
                 name="violation_action"
                 value={formData.violation_action}
                 onChange={handleInputChange}
                 placeholder={t('complaint.violationActionPlaceholder') || 'Describe in detail the action or inaction that led to the rights violation'}
-                className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 resize-vertical min-h-[100px] text-blue-950 text-sm shadow-sm"
-                rows={4}
+                className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 resize-vertical min-h-[50px] text-blue-950 text-sm shadow-sm"
+                rows={2}
                 required
               />
             </div>
@@ -434,8 +656,8 @@ function Complaint() {
                 value={formData.violation_consequences}
                 onChange={handleInputChange}
                 placeholder={t('complaint.violationConsequencesPlaceholder') || 'Describe the consequences of the rights violation'}
-                className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 resize-vertical min-h-[80px] text-blue-950 text-sm shadow-sm"
-                rows={3}
+                className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 resize-vertical min-h-[40px] text-blue-950 text-sm shadow-sm"
+                rows={2}
               />
             </div>
 
@@ -455,20 +677,6 @@ function Complaint() {
 
             <div>
               <label className="block text-sm font-medium text-blue-950 mb-1.5">
-                {t('complaint.additionalComments') || 'Additional comments'}
-              </label>
-              <textarea
-                name="additional_comments"
-                value={formData.additional_comments}
-                onChange={handleInputChange}
-                placeholder={t('complaint.additionalCommentsPlaceholder') || 'Any additional information that may be useful'}
-                className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 resize-vertical min-h-[80px] text-blue-950 text-sm shadow-sm"
-                rows={3}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-blue-950 mb-1.5">
                 {t('complaint.description')}
               </label>
               <textarea
@@ -481,9 +689,26 @@ function Complaint() {
               />
             </div>
 
+            <div className="flex items-center">
+              <label className="relative flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isAnonymous}
+                  onChange={(e) => setIsAnonymous(e.target.checked)}
+                  className="sr-only"
+                />
+                <div className={`w-10 h-5 rounded-full ${isAnonymous ? 'bg-blue-500' : 'bg-gray-300'} transition-colors duration-200 shadow-inner`}></div>
+                <div className={`absolute left-0.5 top-0.5 bg-white border border-gray-200 rounded-full h-4 w-4 transition-transform duration-200 shadow-sm ${isAnonymous ? 'transform translate-x-5' : ''}`}></div>
+              </label>
+              <span className="ml-3 text-sm text-blue-950">
+                {t('complaint.anonymous')}
+              </span>
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-blue-950 mb-1.5">
                 {t('complaint.contactInfo')}
+                <span className="text-red-500 ml-1">*</span>
               </label>
               <input
                 type="text"
@@ -495,6 +720,9 @@ function Complaint() {
                 className="w-full px-4 py-2.5 rounded-full border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 disabled:bg-gray-50 disabled:text-gray-500 text-blue-950 text-sm shadow-sm"
                 required={!isAnonymous}
               />
+              <p className="text-xs text-gray-500 mt-1">
+                {t('complaint.contactInfoDescription') || 'This information will be hidden if you choose to submit anonymously'}
+              </p>
             </div>
 
             <div>
@@ -540,36 +768,20 @@ function Complaint() {
                 </div>
               )}
             </div>
-
-            <div className="flex items-center">
-              <label className="relative flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={isAnonymous}
-                  onChange={(e) => setIsAnonymous(e.target.checked)}
-                  className="sr-only"
-                />
-                <div className={`w-10 h-5 rounded-full ${isAnonymous ? 'bg-blue-500' : 'bg-gray-300'} transition-colors duration-200 shadow-inner`}></div>
-                <div className={`absolute left-0.5 top-0.5 bg-white border border-gray-200 rounded-full h-4 w-4 transition-transform duration-200 shadow-sm ${isAnonymous ? 'transform translate-x-5' : ''}`}></div>
-              </label>
-              <span className="ml-3 text-sm text-blue-950">
-                {t('complaint.anonymous')}
-              </span>
-            </div>
             
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || geocoding}
               className={`w-full px-4 py-3 rounded-full font-semibold text-white transition-all duration-300 flex items-center justify-center gap-2 text-sm shadow-md hover:shadow-xl ${
-                submitting 
+                submitting || geocoding
                   ? 'bg-gray-400 cursor-not-allowed' 
                   : 'bg-gradient-to-r from-blue-900 via-blue-800 to-blue-700 hover:from-blue-950 hover:via-blue-900 hover:to-blue-800'
               }`}
             >
-              {submitting ? (
+              {(submitting || geocoding) ? (
                 <>
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  {t('complaint.submitting')}
+                  {geocoding ? t('complaint.geocoding') || 'Geocoding address...' : t('complaint.submitting')}
                 </>
               ) : (
                 <>
@@ -581,7 +793,13 @@ function Complaint() {
           </form>
 
           <div className="mt-6 pt-4 border-t border-gray-200">
-            <div className="flex justify-center gap-4">
+            <div className="flex justify-center gap-4 flex-wrap">
+              <button
+                onClick={navigateToViolationsMap}
+                className="text-blue-600 hover:text-blue-800 text-sm font-medium transition-colors"
+              >
+                View Violations Map
+              </button>
               <button
                 onClick={navigateToViolators}
                 className="text-blue-600 hover:text-blue-800 text-sm font-medium transition-colors"
