@@ -1,4 +1,3 @@
-// src/App.jsx
 import React, { useState, useEffect, Component } from "react";
 import { BrowserRouter, Routes, Route, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -30,6 +29,9 @@ import Complaint from "./pages/Complaint";
 import Donation from "./pages/Donation";
 import Onboarding from "./pages/Onboarding";
 import Moderation from './components/Moderation';
+import CreatePostPage from './pages/CreatePostPage';
+import MainLayout from './components/layout/MainLayout';
+import ViolationsMap from './pages/ViolationsMap';
 
 // Error Boundary for handling errors in components
 class ErrorBoundary extends Component {
@@ -59,10 +61,31 @@ function App() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
 
   useEffect(() => {
     const savedLanguage = localStorage.getItem("language") || "uk";
     i18n.changeLanguage(savedLanguage);
+
+    // Check current user session
+    const getCurrentUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        setCurrentUser(session.user);
+      }
+    };
+    getCurrentUser();
+
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        setCurrentUser(session.user);
+      } else {
+        setCurrentUser(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, [i18n]);
 
   const handleLanguageChange = (lng) => {
@@ -549,6 +572,30 @@ function App() {
 }
 
 export default function AppWrapper() {
+  const [currentUser, setCurrentUser] = useState(null);
+
+  useEffect(() => {
+    // Check current user session
+    const getCurrentUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        setCurrentUser(session.user);
+      }
+    };
+    getCurrentUser();
+
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        setCurrentUser(session.user);
+      } else {
+        setCurrentUser(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
   return (
     <BrowserRouter>
       <ErrorBoundary>
@@ -581,6 +628,15 @@ export default function AppWrapper() {
           <Route path="/donation" element={<Donation />} />
           <Route path="/onboarding" element={<Onboarding />} />
           <Route path="/moderation" element={<Moderation />} />
+          <Route 
+            path="/create-post" 
+            element={
+              <MainLayout currentUser={currentUser}>
+                <CreatePostPage currentUser={currentUser} />
+              </MainLayout>
+            } 
+          />
+          <Route path="/violations-map" element={<ViolationsMap />} />
         </Routes>
       </ErrorBoundary>
     </BrowserRouter>
