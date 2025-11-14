@@ -7,10 +7,7 @@ import { Dialog, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import Navbar from '../components/Navbar';
-import Sidebar from '../components/Sidebar';
-import ComplaintForm from '../components/ComplaintForm';
-import DonationSection from '../components/DonationSection';
+import MainLayout from '../components/layout/MainLayout';
 
 function Events() {
   const { t } = useTranslation();
@@ -36,17 +33,35 @@ function Events() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const leftColumnRef = useRef(null);
-  const centerColumnRef = useRef(null);
-  const rightColumnRef = useRef(null);
-  const isScrolling = useRef(false);
-
   useEffect(() => {
     const fetchCurrentUser = async () => {
       try {
         const { data: { user }, error } = await supabase.auth.getUser();
         if (error) throw error;
-        setCurrentUser(user);
+        
+        if (user) {
+          const { data: profile, error: profileError } = await supabase
+            .from('users')
+            .select('username, profile_picture, country, city, status, bio, social_links')
+            .eq('id', user.id)
+            .single();
+
+          if (profileError) {
+            console.error('Error loading profile:', profileError);
+            setCurrentUser(user);
+          } else {
+            setCurrentUser({ 
+              ...user, 
+              username: profile.username,
+              profile_picture: profile.profile_picture,
+              country: profile.country,
+              city: profile.city,
+              status: profile.status,
+              bio: profile.bio,
+              social_links: profile.social_links
+            });
+          }
+        }
         return user;
       } catch (err) {
         setError(t('authError'));
@@ -120,96 +135,6 @@ function Events() {
 
     return () => supabase.removeChannel(subscription);
   }, [communityId, t]);
-
-  useEffect(() => {
-    setTimeout(() => {
-      setupSynchronizedScrolling();
-    }, 100);
-
-    return () => {
-      if (leftColumnRef.current) {
-        leftColumnRef.current.removeEventListener('scroll', handleLeftScroll);
-      }
-      if (centerColumnRef.current) {
-        centerColumnRef.current.removeEventListener('scroll', handleCenterScroll);
-      }
-      if (rightColumnRef.current) {
-        rightColumnRef.current.removeEventListener('scroll', handleRightScroll);
-      }
-    };
-  }, [loading]);
-
-  const setupSynchronizedScrolling = () => {
-    const leftColumn = leftColumnRef.current;
-    const centerColumn = centerColumnRef.current;
-    const rightColumn = rightColumnRef.current;
-
-    if (leftColumn && centerColumn && rightColumn) {
-      leftColumn.addEventListener('scroll', handleLeftScroll);
-      centerColumn.addEventListener('scroll', handleCenterScroll);
-      rightColumn.addEventListener('scroll', handleRightScroll);
-    }
-  };
-
-  const handleLeftScroll = (e) => {
-    if (isScrolling.current) return;
-    isScrolling.current = true;
-
-    const leftColumn = leftColumnRef.current;
-    const centerColumn = centerColumnRef.current;
-    const rightColumn = rightColumnRef.current;
-
-    if (leftColumn && centerColumn && rightColumn) {
-      const scrollPercentage = leftColumn.scrollTop / (leftColumn.scrollHeight - leftColumn.clientHeight);
-      
-      centerColumn.scrollTop = scrollPercentage * (centerColumn.scrollHeight - centerColumn.clientHeight);
-      rightColumn.scrollTop = scrollPercentage * (rightColumn.scrollHeight - rightColumn.clientHeight);
-    }
-
-    setTimeout(() => {
-      isScrolling.current = false;
-    }, 50);
-  };
-
-  const handleCenterScroll = (e) => {
-    if (isScrolling.current) return;
-    isScrolling.current = true;
-
-    const leftColumn = leftColumnRef.current;
-    const centerColumn = centerColumnRef.current;
-    const rightColumn = rightColumnRef.current;
-
-    if (leftColumn && centerColumn && rightColumn) {
-      const scrollPercentage = centerColumn.scrollTop / (centerColumn.scrollHeight - centerColumn.clientHeight);
-      
-      leftColumn.scrollTop = scrollPercentage * (leftColumn.scrollHeight - leftColumn.clientHeight);
-      rightColumn.scrollTop = scrollPercentage * (rightColumn.scrollHeight - rightColumn.clientHeight);
-    }
-
-    setTimeout(() => {
-      isScrolling.current = false;
-    }, 50);
-  };
-
-  const handleRightScroll = (e) => {
-    if (isScrolling.current) return;
-    isScrolling.current = true;
-
-    const leftColumn = leftColumnRef.current;
-    const centerColumn = centerColumnRef.current;
-    const rightColumn = rightColumnRef.current;
-
-    if (leftColumn && centerColumn && rightColumn) {
-      const scrollPercentage = rightColumn.scrollTop / (rightColumn.scrollHeight - rightColumn.clientHeight);
-      
-      leftColumn.scrollTop = scrollPercentage * (leftColumn.scrollHeight - leftColumn.clientHeight);
-      centerColumn.scrollTop = scrollPercentage * (centerColumn.scrollHeight - centerColumn.clientHeight);
-    }
-
-    setTimeout(() => {
-      isScrolling.current = false;
-    }, 50);
-  };
 
   const handleCreateEvent = async () => {
     if (!currentUser) {
@@ -400,170 +325,138 @@ function Events() {
   if (loading) return <div className="p-4">{t('loading')}</div>;
   if (error) return <div className="p-4 text-red-500">{t('error')}: {error}</div>;
 
-  return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <Navbar currentUser={currentUser} />
-      
-      <div className="w-full px-4 grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 mt-4">
-        {/* Left panel */}
-        <div 
-          ref={leftColumnRef}
-          className="lg:col-span-3 overflow-y-auto"
-          style={{ maxHeight: 'calc(100vh - 80px)' }}
-        >
-          <Sidebar currentUser={currentUser} />
+  const eventsContent = (
+    <div className="w-full px-4 mt-4">
+      <div className="max-w-4xl mx-auto">
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-2xl font-semibold text-gray-900">{t('events')}</h1>
+          <button
+            onClick={() => setIsCreateModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
+          >
+            <FaPlus />
+            {t('createEvent')}
+          </button>
         </div>
-        
-        {/* Central panel */}
-        <div 
-          ref={centerColumnRef}
-          className="lg:col-span-6 overflow-y-auto"
-          style={{ maxHeight: 'calc(100vh - 80px)' }}
-        >
-          <div className="flex items-center justify-between mb-6">
-            <h1 className="text-2xl font-semibold text-gray-900">{t('events')}</h1>
-            <button
-              onClick={() => setIsCreateModalOpen(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
-            >
-              <FaPlus />
-              {t('createEvent')}
-            </button>
-          </div>
 
-          <div className="space-y-4">
-            {events.map((event) => (
-              <div key={event.id} className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                        <FaCalendarAlt className="text-blue-600" />
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900">{event.title}</h3>
-                        <p className="text-sm text-gray-500">
-                          {new Date(event.event_date).toLocaleDateString()} • {new Date(event.event_date).toLocaleTimeString()}
-                        </p>
-                      </div>
+        <div className="space-y-4">
+          {events.map((event) => (
+            <div key={event.id} className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                      <FaCalendarAlt className="text-blue-600" />
                     </div>
-
-                    {event.description && (
-                      <p className="text-gray-600 mb-3">{event.description}</p>
-                    )}
-
-                    {event.location && (
-                      <div className="flex items-center gap-2 text-sm text-gray-500 mb-3">
-                        <FaMapMarkerAlt />
-                        <span>{event.location}</span>
-                      </div>
-                    )}
-
-                    <div className="flex items-center gap-4 text-sm text-gray-500">
-                      <div className="flex items-center gap-1">
-                        <FaUsers />
-                        <span>{event.participant_count} {t('participants')}</span>
-                      </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">{event.title}</h3>
+                      <p className="text-sm text-gray-500">
+                        {new Date(event.event_date).toLocaleDateString()} • {new Date(event.event_date).toLocaleTimeString()}
+                      </p>
                     </div>
-
-                    {event.participant_count > 0 && (
-                      <div className="mt-3">
-                        <h4 className="text-sm font-medium text-gray-700 mb-2">{t('participantList')}</h4>
-                        <div className="flex flex-wrap gap-2">
-                          {event.participants.map(participant => (
-                            <div
-                              key={participant.id}
-                              className="flex items-center gap-2 px-3 py-1 bg-gray-100 rounded-full cursor-pointer hover:bg-gray-200 transition-colors"
-                              onClick={() => handleUserClick(participant.id)}
-                            >
-                              {participant.profile_picture ? (
-                                <img
-                                  src={participant.profile_picture}
-                                  alt={participant.username}
-                                  className="w-6 h-6 rounded-full"
-                                />
-                              ) : (
-                                <div className="w-6 h-6 rounded-full bg-gray-300 flex items-center justify-center">
-                                  <span className="text-xs font-medium">
-                                    {participant.username?.[0]?.toUpperCase() || 'U'}
-                                  </span>
-                                </div>
-                              )}
-                              <span className="text-sm text-gray-700">{participant.username}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
                   </div>
 
-                  <div className="flex flex-col gap-2 ml-4">
-                    {event.creator_id === currentUser?.id && (
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => {
-                            setEditEvent({
-                              id: event.id,
-                              title: event.title,
-                              description: event.description || '',
-                              event_date: new Date(event.event_date).toISOString().slice(0, 16),
-                              location: event.location || '',
-                            });
-                            setIsEditModalOpen(true);
-                          }}
-                          className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
-                          title={t('editEvent')}
-                        >
-                          <FaEdit />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteEvent(event.id)}
-                          className="p-2 text-gray-600 hover:text-red-600 hover:bg-gray-100 rounded-md transition-colors"
-                          title={t('deleteEvent')}
-                        >
-                          <FaTrash />
-                        </button>
-                      </div>
-                    )}
-                    
-                    <button
-                      onClick={() => (event.is_joined ? handleLeaveEvent(event.id) : handleJoinEvent(event.id))}
-                      className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                        event.is_joined
-                          ? 'text-red-600 bg-red-50 hover:bg-red-100'
-                          : 'text-green-600 bg-green-50 hover:bg-green-100'
-                      }`}
-                      disabled={loading}
-                    >
-                      {event.is_joined ? <FaUserMinus /> : <FaUserPlus />}
-                      {event.is_joined ? t('leaveEvent') : t('joinEvent')}
-                    </button>
+                  {event.description && (
+                    <p className="text-gray-600 mb-3">{event.description}</p>
+                  )}
+
+                  {event.location && (
+                    <div className="flex items-center gap-2 text-sm text-gray-500 mb-3">
+                      <FaMapMarkerAlt />
+                      <span>{event.location}</span>
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-4 text-sm text-gray-500">
+                    <div className="flex items-center gap-1">
+                      <FaUsers />
+                      <span>{event.participant_count} {t('participants')}</span>
+                    </div>
                   </div>
+
+                  {event.participant_count > 0 && (
+                    <div className="mt-3">
+                      <h4 className="text-sm font-medium text-gray-700 mb-2">{t('participantList')}</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {event.participants.map(participant => (
+                          <div
+                            key={participant.id}
+                            className="flex items-center gap-2 px-3 py-1 bg-gray-100 rounded-full cursor-pointer hover:bg-gray-200 transition-colors"
+                            onClick={() => handleUserClick(participant.id)}
+                          >
+                            {participant.profile_picture ? (
+                              <img
+                                src={participant.profile_picture}
+                                alt={participant.username}
+                                className="w-6 h-6 rounded-full"
+                              />
+                            ) : (
+                              <div className="w-6 h-6 rounded-full bg-gray-300 flex items-center justify-center">
+                                <span className="text-xs font-medium">
+                                  {participant.username?.[0]?.toUpperCase() || 'U'}
+                                </span>
+                              </div>
+                            )}
+                            <span className="text-sm text-gray-700">{participant.username}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-col gap-2 ml-4">
+                  {event.creator_id === currentUser?.id && (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setEditEvent({
+                            id: event.id,
+                            title: event.title,
+                            description: event.description || '',
+                            event_date: new Date(event.event_date).toISOString().slice(0, 16),
+                            location: event.location || '',
+                          });
+                          setIsEditModalOpen(true);
+                        }}
+                        className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
+                        title={t('editEvent')}
+                      >
+                        <FaEdit />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteEvent(event.id)}
+                        className="p-2 text-gray-600 hover:text-red-600 hover:bg-gray-100 rounded-md transition-colors"
+                        title={t('deleteEvent')}
+                      >
+                        <FaTrash />
+                      </button>
+                    </div>
+                  )}
+                  
+                  <button
+                    onClick={() => (event.is_joined ? handleLeaveEvent(event.id) : handleJoinEvent(event.id))}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                      event.is_joined
+                        ? 'text-red-600 bg-red-50 hover:bg-red-100'
+                        : 'text-green-600 bg-green-50 hover:bg-green-100'
+                    }`}
+                    disabled={loading}
+                  >
+                    {event.is_joined ? <FaUserMinus /> : <FaUserPlus />}
+                    {event.is_joined ? t('leaveEvent') : t('joinEvent')}
+                  </button>
                 </div>
               </div>
-            ))}
+            </div>
+          ))}
 
-            {events.length === 0 && (
-              <div className="text-center py-12 text-gray-500">
-                <FaCalendarAlt className="mx-auto text-4xl text-gray-300 mb-4" />
-                <p className="text-lg">{t('noEvents')}</p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Right panel */}
-        <div 
-          ref={rightColumnRef}
-          className="lg:col-span-3 space-y-4 overflow-y-auto"
-          style={{ maxHeight: 'calc(100vh - 80px)' }}
-        >
-          <div>
-            <ComplaintForm setError={setError} error={error} />
-          </div>
-          <div>
-            <DonationSection />
-          </div>
+          {events.length === 0 && (
+            <div className="text-center py-12 text-gray-500">
+              <FaCalendarAlt className="mx-auto text-4xl text-gray-300 mb-4" />
+              <p className="text-lg">{t('noEvents')}</p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -780,6 +673,14 @@ function Events() {
       
       <ToastContainer position="top-right" autoClose={3000} />
     </div>
+  );
+
+  return (
+    <MainLayout 
+      currentUser={currentUser}
+    >
+      {eventsContent}
+    </MainLayout>
   );
 }
 
