@@ -15,7 +15,9 @@ import Country from "./components/Country";
 import Terms from "./pages/Terms";
 import Services from "./components/Services";
 import PublicProfile from "./components/PublicProfile";
-import Chat from "./components/Chat";
+import Chat from "./components/Chat/Chat";
+import GroupChat from "./components/Chat/GroupChat";
+import Message from "./components/Chat/Message";
 import AddService from "./components/AddService";
 import ServiceDetails from "./components/ServiceDetails";
 import Community from "./components/Community";
@@ -32,6 +34,7 @@ import Moderation from './components/Moderation';
 import CreatePostPage from './pages/CreatePostPage';
 import MainLayout from './components/layout/MainLayout';
 import ViolationsMap from './pages/ViolationsMap';
+import ComplaintDetails from './components/ComplaintDetails';
 
 // Error Boundary for handling errors in components
 class ErrorBoundary extends Component {
@@ -88,6 +91,27 @@ function App() {
     return () => subscription.unsubscribe();
   }, [i18n]);
 
+  const checkOnboardingCompletion = async (userId) => {
+    try {
+      const { data, error } = await supabase
+        .from('user_points')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('type', 'onboarding_completion')
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        console.error('Error checking onboarding completion:', error);
+        return false;
+      }
+
+      return !!data; // Return true if onboarding points exist
+    } catch (error) {
+      console.error('Error in checkOnboardingCompletion:', error);
+      return false;
+    }
+  };
+
   const handleLanguageChange = (lng) => {
     i18n.changeLanguage(lng);
     localStorage.setItem("language", lng);
@@ -102,7 +126,7 @@ function App() {
       if (provider) {
         const { error: providerError } = await supabase.auth.signInWithOAuth({
           provider,
-          options: { redirectTo: `${window.location.origin}/feed` },
+          options: { redirectTo: `${window.location.origin}/country` },
         });
         error = providerError;
       } else {
@@ -113,7 +137,17 @@ function App() {
         error = emailError;
       }
       if (error) throw error;
-      navigate("/feed");
+
+      // Check if user completed onboarding
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const onboardingCompleted = await checkOnboardingCompletion(user.id);
+        if (onboardingCompleted) {
+          navigate("/country");
+        } else {
+          navigate("/onboarding");
+        }
+      }
     } catch (err) {
       console.error("Login error:", err);
       setError(t("loginError"));
@@ -617,6 +651,7 @@ export default function AppWrapper() {
             element={<ServiceDetails />}
           />
           <Route path="/chat" element={<Chat />} />
+          <Route path="/group-chat" element={<GroupChat />} />
           <Route path="/community" element={<Community />} />
           <Route path="/community/:id" element={<CommunityDetail />} />
           <Route path="/community/:communityId/events" element={<Events />} />
@@ -637,6 +672,7 @@ export default function AppWrapper() {
             } 
           />
           <Route path="/violations-map" element={<ViolationsMap />} />
+          <Route path="/complaint-details/:id" element={<ComplaintDetails />} />
         </Routes>
       </ErrorBoundary>
     </BrowserRouter>
