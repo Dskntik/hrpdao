@@ -24,7 +24,6 @@ function Navbar({ currentUser, onToggleSidebar }) {
   const [profileData, setProfileData] = useState(null);
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
-  const [totalPoints, setTotalPoints] = useState(0);
   const [showAIAdvisor, setShowAIAdvisor] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
 
@@ -52,112 +51,6 @@ function Navbar({ currentUser, onToggleSidebar }) {
     };
 
     fetchUserProfile();
-  }, [currentUser]);
-
-  // ВИПРАВЛЕНА ФУНКЦІЯ - правильний розрахунок балансу
-  const fetchUserPoints = async () => {
-    if (currentUser?.id) {
-      try {
-        // Завантажуємо нараховані поінти
-        const { data: pointsData, error: pointsError } = await supabase
-          .from("user_points")
-          .select("points")
-          .eq("user_id", currentUser.id);
-
-        if (pointsError) {
-          console.error("❌ Navbar: Error loading points:", pointsError);
-          return;
-        }
-
-        // Завантажуємо витрати поінтів
-        const { data: deductionsData, error: deductionsError } = await supabase
-          .from("user_points_deductions")
-          .select("points_used")
-          .eq("user_id", currentUser.id);
-
-        if (deductionsError) {
-          console.error("❌ Navbar: Error loading deductions:", deductionsError);
-          return;
-        }
-
-        // Обчислюємо загальну суму нарахованих поінтів
-        const totalEarned = pointsData.reduce(
-          (sum, record) => sum + parseInt(record.points || 0),
-          0
-        );
-
-        // Обчислюємо загальну суму витрачених поінтів
-        const totalSpent = deductionsData.reduce(
-          (sum, record) => sum + parseInt(record.points_used || 0),
-          0
-        );
-
-        // Обчислюємо поточний баланс (НЕ віднімаємо заблоковані токени)
-        const currentBalance = totalEarned - totalSpent;
-        
-        setTotalPoints(currentBalance);
-
-      } catch (error) {
-        console.error("❌ Navbar: Error in fetchUserPoints:", error);
-      }
-    }
-  };
-
-  useEffect(() => {
-    fetchUserPoints();
-  }, [currentUser]);
-
-  useEffect(() => {
-    if (!currentUser?.id) return;
-
-    // Підписка на зміни в таблиці нарахованих поінтів
-    const pointsSubscription = supabase
-      .channel("user_points_changes")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "user_points",
-          filter: `user_id=eq.${currentUser.id}`,
-        },
-        (payload) => {
-          fetchUserPoints();
-        }
-      )
-      .subscribe();
-
-    // Підписка на зміни в таблиці витрат поінтів
-    const deductionsSubscription = supabase
-      .channel("user_points_deductions_changes")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "user_points_deductions",
-          filter: `user_id=eq.${currentUser.id}`,
-        },
-        (payload) => {
-          fetchUserPoints();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      pointsSubscription.unsubscribe();
-      deductionsSubscription.unsubscribe();
-    };
-  }, [currentUser]);
-
-  useEffect(() => {
-    if (!currentUser?.id) return;
-
-    const interval = setInterval(() => {
-      fetchUserPoints();
-    }, 30000);
-
-    return () => clearInterval(interval);
   }, [currentUser]);
 
   const handleConnectWallet = async () => {
@@ -204,22 +97,6 @@ function Navbar({ currentUser, onToggleSidebar }) {
       "https://ipfs.io/ipfs/QmRXQP1s6rVaiXxrr6jY6Y7EfK1CYvyc82F99siunckoQr/",
       "_blank"
     );
-  };
-
-  const refreshPoints = () => {
-    fetchUserPoints();
-  };
-
-  useEffect(() => {
-    window.refreshNavbarPoints = refreshPoints;
-    return () => {
-      delete window.refreshNavbarPoints;
-    };
-  }, []);
-
-  // Функція для переходу на сторінку Education
-  const handlePointsClick = () => {
-    navigate("/education");
   };
 
   // Основна функція пошуку
@@ -382,27 +259,6 @@ function Navbar({ currentUser, onToggleSidebar }) {
                 </div>
               </div>
             </div>
-
-            {currentUser && (
-              <div className="flex-1 flex justify-center">
-                <button
-                  onClick={handlePointsClick}
-                  className="flex items-center space-x-1 sm:space-x-2 bg-gradient-to-r from-yellow-400 to-orange-500 text-white px-2 sm:px-3 py-1 sm:py-2 rounded-full shadow-md hover:from-yellow-500 hover:to-orange-600 transition-all duration-200 cursor-pointer group"
-                  title="Click to go to Education page"
-                >
-                  <FaCoins className="h-3 w-3 sm:h-4 sm:w-4" />
-                  <span className="font-bold">
-                    <span className="hidden lg:inline">
-                      {totalPoints} Human Rights Points
-                    </span>
-                    <span className="lg:hidden">{totalPoints}</span>
-                  </span>
-                  <div className="absolute top-full right-0 mt-2 hidden group-hover:block bg-gray-800 text-white text-xs rounded py-1 px-2 whitespace-nowrap z-50">
-                    Go to Education
-                  </div>
-                </button>
-              </div>
-            )}
 
             <div
               className={`flex items-center space-x-2 sm:space-x-3 ${
