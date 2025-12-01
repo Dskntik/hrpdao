@@ -96,7 +96,6 @@ function ViolationsMap() {
   const [selectedCountry, setSelectedCountry] = useState('all');
   const [dateFilter, setDateFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
 
   useEffect(() => {
     fetchViolations();
@@ -151,6 +150,7 @@ function ViolationsMap() {
           )
         `)
         .eq('status', 'verified')
+        .eq('hidden', false)
         .not('coordinates', 'is', null)
         .order('created_at', { ascending: false });
 
@@ -173,14 +173,6 @@ function ViolationsMap() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const getStatusBadge = (status) => {
-    return {
-      text: t('violationsMap.verified') || 'Verified',
-      class: 'bg-red-100 text-red-800 border-red-200',
-      icon: <CheckCircle className="w-3 h-3" />
-    };
   };
 
   const formatDate = (dateString) => !dateString ? 'N/A' : new Date(dateString).toLocaleDateString();
@@ -207,6 +199,10 @@ function ViolationsMap() {
           const monthAgo = new Date(today.setMonth(today.getMonth() - 1));
           if (vDate < monthAgo) return false;
           break;
+        case 'year':
+          const yearAgo = new Date(today.setFullYear(today.getFullYear() - 1));
+          if (vDate < yearAgo) return false;
+          break;
       }
     }
 
@@ -222,14 +218,19 @@ function ViolationsMap() {
     return country ? (country.name[i18n.language] || country.name.en) : code;
   };
 
-  const clearFilters = () => {
-    setSelectedCountry('all');
-    setDateFilter('all');
-    setSearchQuery('');
-  };
-
   const handleCountryFilterChange = (countryCode) => {
     setSelectedCountry(countryCode);
+  };
+
+  const getUniqueCountries = () => {
+    const countries = violations.map(v => v.country).filter(Boolean);
+    return [...new Set(countries)];
+  };
+
+  // Функція для отримання кількості унікальних країн у відфільтрованих порушеннях
+  const getFilteredCountriesCount = () => {
+    const countries = filteredViolations.map(v => v.country).filter(Boolean);
+    return [...new Set(countries)].length;
   };
 
   if (loading) {
@@ -247,93 +248,78 @@ function ViolationsMap() {
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 mb-2">
-              {t('violationsMap.title') || 'Verified Violations Map'}
+              {t('violationsMap.title') || 'Violations Map'}
             </h1>
             <p className="text-gray-600">
-              {t('violationsMap.subtitle') || 'View all verified human rights violations on the map'}
+              {t('violationsMap.subtitle') || 'View all human rights violations on the map'}
             </p>
           </div>
-          
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-full flex items-center gap-2 transition-colors text-sm font-medium"
-          >
-            <Filter className="w-4 h-4" />
-            {showFilters ? 'Hide Filters' : 'Show Filters'}
-          </button>
         </div>
 
-        {showFilters && (
-          <div className="mt-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {t('violationsMap.searchViolator') || 'Search by violator name'}
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder={t('violationsMap.searchPlaceholder') || 'Enter violator name...'}
-                    className="w-full px-4 py-2 rounded-full border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                  />
-                  <Search className="w-4 h-4 text-gray-400 absolute right-3 top-2.5" />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {t('violationsMap.filterByCountry') || 'Filter by country'}
-                </label>
-                <select
-                  value={selectedCountry}
-                  onChange={(e) => handleCountryFilterChange(e.target.value)}
-                  className="w-full px-4 py-2 rounded-full border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                >
-                  <option value="all">{t('violationsMap.allCountries') || 'All Countries'}</option>
-                  {Array.from(new Set(violations.map(v => v.country))).map(code => (
-                    <option key={code} value={code}>
-                      {getCurrentCountryName(code)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {t('violationsMap.filterByDate') || 'Filter by date'}
-                </label>
-                <select
-                  value={dateFilter}
-                  onChange={(e) => setDateFilter(e.target.value)}
-                  className="w-full px-4 py-2 rounded-full border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                >
-                  <option value="all">{t('violationsMap.allDates') || 'All Dates'}</option>
-                  <option value="today">{t('violationsMap.today') || 'Today'}</option>
-                  <option value="week">{t('violationsMap.thisWeek') || 'This Week'}</option>
-                  <option value="month">{t('violationsMap.thisMonth') || 'This Month'}</option>
-                </select>
-              </div>
-
-              <div className="flex items-end">
-                <button
-                  onClick={clearFilters}
-                  className="w-full px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-full transition-colors text-sm font-medium"
-                >
-                  {t('violationsMap.clearFilters') || 'Clear Filters'}
-                </button>
-              </div>
-            </div>
-
-            <div className="mt-3 text-sm text-gray-600">
-              Showing {filteredViolations.length} of {violations.length} verified violations
-              {selectedCountry !== 'all' && ` in ${getCurrentCountryName(selectedCountry)}`}
-              {dateFilter !== 'all' && ` from ${dateFilter}`}
-              {searchQuery && ` matching "${searchQuery}"`}
+        {/* Фільтри - завжди відображаються */}
+        <div className="mt-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
+          {/* Поле пошуку - тепер зверху */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              {t('violationsMap.searchViolator') || 'Search by violator name'}
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={t('violationsMap.searchPlaceholder') || 'Enter violator name...'}
+                className="w-full px-4 py-2 rounded-full border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+              />
+              <Search className="w-4 h-4 text-gray-400 absolute right-3 top-2.5" />
             </div>
           </div>
-        )}
+
+          {/* Решта фільтрів - тепер знизу */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                {t('violationsMap.filterByCountry') || 'Filter by country'}
+              </label>
+              <select
+                value={selectedCountry}
+                onChange={(e) => handleCountryFilterChange(e.target.value)}
+                className="w-full px-4 py-2 rounded-full border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+              >
+                <option value="all">{t('violationsMap.allCountries') || 'All Countries'}</option>
+                {getUniqueCountries().map(code => (
+                  <option key={code} value={code}>
+                    {getCurrentCountryName(code)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                {t('violationsMap.filterByDate') || 'Filter by date'}
+              </label>
+              <select
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value)}
+                className="w-full px-4 py-2 rounded-full border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+              >
+                <option value="all">{t('violationsMap.allDates') || 'All Dates'}</option>
+                <option value="today">{t('violationsMap.today') || 'Today'}</option>
+                <option value="week">{t('violationsMap.thisWeek') || 'This Week'}</option>
+                <option value="month">{t('violationsMap.thisMonth') || 'This Month'}</option>
+                <option value="year">{t('violationsMap.thisYear') || 'This Year'}</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-3 text-sm text-gray-600">
+            Showing {filteredViolations.length} of {violations.length} violations in {getFilteredCountriesCount()} countries
+            {selectedCountry !== 'all' && ` in ${getCurrentCountryName(selectedCountry)}`}
+            {dateFilter !== 'all' && ` from ${dateFilter}`}
+            {searchQuery && ` matching "${searchQuery}"`}
+          </div>
+        </div>
       </div>
 
       {/* Мапа */}
@@ -344,10 +330,15 @@ function ViolationsMap() {
             zoom={initialZoom}
             style={{ height: '100%', width: '100%' }}
             className="rounded-lg"
+            worldCopyJump={false}
+            maxBounds={[[-90, -180], [90, 180]]}
+            maxBoundsViscosity={1.0}
           >
             <TileLayer
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              noWrap={true}
+              bounds={[[-90, -180], [90, 180]]}
             />
 
             <MapController
@@ -364,19 +355,13 @@ function ViolationsMap() {
                 icon={verifiedIcon}
               >
                 <Popup>
-                  <div className="p-3 max-w-xs">
-                    <div className="flex items-start justify-between mb-3">
-                      <h3 className="font-semibold text-gray-900 text-sm leading-tight">
-                        {violation.violation_action?.substring(0, 80)}
-                        {violation.violation_action?.length > 80 ? '...' : ''}
-                      </h3>
-                      <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs border ${getStatusBadge(violation.status).class}`}>
-                        {getStatusBadge(violation.status).icon}
-                        <span>{getStatusBadge(violation.status).text}</span>
-                      </div>
-                    </div>
+                  <div className="p-1 max-w-xs space-y-1">
+                    <h3 className="font-semibold text-gray-900 text-sm leading-tight mb-3">
+                      {violation.violation_action?.substring(0, 80)}
+                      {violation.violation_action?.length > 80 ? '...' : ''}
+                    </h3>
                     
-                    <div className="space-y-2 text-xs text-gray-600">
+                    <div className="space-y-1 text-xs text-gray-600">
                       {(violation.violation_date || violation.violation_time) && (
                         <div className="flex items-center gap-2">
                           <Calendar className="w-3 h-3 text-gray-400" />
@@ -390,13 +375,7 @@ function ViolationsMap() {
                         </div>
                       )}
                       
-                      {violation.violation_address && (
-                        <div className="flex items-start gap-2">
-                          <MapPin className="w-3 h-3 text-gray-400 mt-0.5 flex-shrink-0" />
-                          <span className="leading-tight">{violation.violation_address}</span>
-                        </div>
-                      )}
-                      
+                                           
                       {violation.violator_name && (
                         <div className="flex items-center gap-2">
                           <User className="w-3 h-3 text-gray-400" />
@@ -435,35 +414,7 @@ function ViolationsMap() {
             ))}
           </MapContainer>
         </div>
-
-        {/* Статистика */}
-        <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="bg-red-50 p-4 rounded-lg border border-red-100">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
-                <CheckCircle className="w-5 h-5 text-red-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-red-900">{filteredViolations.length}</p>
-                <p className="text-sm text-red-700">{t('violationsMap.filteredCases') || 'Filtered Cases'}</p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-green-50 p-4 rounded-lg border border-green-100">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                <MapPin className="w-5 h-5 text-green-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-green-900">
-                  {Array.from(new Set(violations.map(v => v.country))).length}
-                </p>
-                <p className="text-sm text-green-700">{t('violationsMap.countries') || 'Countries'}</p>
-              </div>
-            </div>
-          </div>
-        </div>
+    
       </div>
     </div>
   );
