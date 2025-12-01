@@ -5,7 +5,8 @@ import {
   FileText, 
   Heart, 
   GraduationCap, 
-  Shield
+  Shield,
+  Vote
 } from 'lucide-react';
 
 function RightSidebar({ currentUser }) {
@@ -28,7 +29,7 @@ function RightSidebar({ currentUser }) {
       label: t('donation') || 'Support Project',
       description: t('donationDescription') || 'Your support helps us continue fighting for human rights',
       path: '/donation',
-      baseColor: 'green'
+      baseColor: 'blue'
     },
     {
       id: 'education',
@@ -36,7 +37,7 @@ function RightSidebar({ currentUser }) {
       label: t('educationCenter') || 'Education Center',
       description: t('education.description') || 'Interactive courses and educational materials',
       path: '/education',
-      baseColor: 'purple'
+      baseColor: 'blue'
     },
     {
       id: 'violators',
@@ -44,7 +45,15 @@ function RightSidebar({ currentUser }) {
       label: t('violators') || 'Violation Cases',
       description: t('violators.description') || 'Database of documented human rights violations',
       path: '/violators',
-      baseColor: 'red'
+      baseColor: 'blue'
+    },
+    {
+      id: 'voting',
+      icon: Vote,
+      label: t('voting') || 'Voting',
+      description: t('voting.description') || 'Participate in community decisions and polls',
+      path: '/voting',
+      baseColor: 'blue'
     }
   ];
 
@@ -57,7 +66,7 @@ function RightSidebar({ currentUser }) {
       blue: {
         gradient: 'from-blue-900 via-blue-800 to-blue-700',
         hover: 'hover:from-blue-950 hover:via-blue-900 hover:to-blue-800',
-        active: 'from-blue-950 via-blue-900 to-blue-800' // ТЕМНІШИЙ, ЯК HOVER
+        active: 'from-blue-950 via-blue-900 to-blue-800'
       },
       green: {
         gradient: 'from-green-900 via-green-800 to-green-700',
@@ -73,6 +82,11 @@ function RightSidebar({ currentUser }) {
         gradient: 'from-red-900 via-red-800 to-red-700',
         hover: 'hover:from-red-950 hover:via-red-900 hover:to-red-800',
         active: 'from-red-950 via-red-900 to-red-800'
+      },
+      orange: {
+        gradient: 'from-orange-900 via-orange-800 to-orange-700',
+        hover: 'hover:from-orange-950 hover:via-orange-900 hover:to-orange-800',
+        active: 'from-orange-950 via-orange-900 to-orange-800'
       }
     };
 
@@ -87,9 +101,7 @@ function RightSidebar({ currentUser }) {
     <div className="space-y-4">
       {/* Quick Actions Section */}
       <div className="bg-white/95 p-6 rounded-2xl shadow-lg border border-blue-100 backdrop-blur-sm">
-        <h3 className="font-semibold text-blue-950 mb-4 text-center text-lg">
-          {t('actions') || 'Actions'}
-        </h3>
+        
         <div className="space-y-3">
           {menuItems.map((item) => {
             const IconComponent = item.icon;
@@ -102,7 +114,7 @@ function RightSidebar({ currentUser }) {
                   onClick={() => navigate(item.path)}
                   className={`
                     w-full px-4 py-5 rounded-full font-semibold transition-all duration-300 
-                    flex items-center justify-center gap-3 text-sm text-white transform
+                    flex items-center justify-center gap-3 text-base text-white transform
                     bg-gradient-to-r ${colorClasses.gradient} ${colorClasses.hover}
                     
                     ring-2 
