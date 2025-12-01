@@ -7,6 +7,17 @@ import countries from '../utils/countries';
 import { FaPaperPlane, FaHeart, FaRegHeart, FaShare, FaEllipsisH } from 'react-icons/fa';
 import { motion, AnimatePresence } from 'framer-motion';
 import MainLayout from './layout/MainLayout';
+import { 
+  Facebook, 
+  Twitter, 
+  Instagram, 
+  Youtube, 
+  MessageCircle,
+  Linkedin,
+  Github,
+  MessageSquare,
+  Phone
+} from 'lucide-react';
 
 function PublicProfile() {
   const { t, i18n } = useTranslation();
@@ -32,6 +43,85 @@ function PublicProfile() {
   const [showShareMenu, setShowShareMenu] = useState(false);
 
   const shareMenuRef = useRef(null);
+
+  // Функція для отримання іконки соцмережі
+  const getSocialIcon = (platform) => {
+    const iconProps = { className: "w-3 h-3", size: 12 };
+    
+    switch (platform) {
+      case 'facebook':
+        return <Facebook {...iconProps} />;
+      case 'twitter':
+        return <Twitter {...iconProps} />;
+      case 'instagram':
+        return <Instagram {...iconProps} />;
+      case 'youtube':
+        return <Youtube {...iconProps} />;
+      case 'telegram':
+        return <MessageCircle {...iconProps} />;
+      case 'linkedin':
+        return <Linkedin {...iconProps} />;
+      case 'github':
+        return <Github {...iconProps} />;
+      case 'discord':
+        return <MessageSquare {...iconProps} />;
+      case 'whatsapp':
+        return <Phone {...iconProps} />;
+      default:
+        return <Instagram {...iconProps} />;
+    }
+  };
+
+  // Функція для отримання градієнту для кожної соцмережі
+  const getSocialIconWithGradient = (platform) => {
+    const getGradientClass = (platform) => {
+      const gradients = {
+        facebook: 'from-blue-600 to-blue-800',
+        twitter: 'from-blue-400 to-blue-600',
+        instagram: 'from-purple-500 to-pink-500',
+        youtube: 'from-red-500 to-red-700',
+        telegram: 'from-blue-400 to-blue-600',
+        linkedin: 'from-blue-700 to-blue-900',
+        github: 'from-gray-700 to-gray-900',
+        discord: 'from-indigo-500 to-indigo-700',
+        whatsapp: 'from-green-500 to-green-600'
+      };
+      return gradients[platform] || 'from-gray-500 to-gray-700';
+    };
+
+    return (
+      <div className={`bg-gradient-to-br ${getGradientClass(platform)} rounded-full p-1.5 text-white`}>
+        {getSocialIcon(platform)}
+      </div>
+    );
+  };
+
+  // Функція для отримання короткої назви платформи
+  const getPlatformName = (platform) => {
+    const names = {
+      facebook: 'Facebook',
+      twitter: 'Twitter',
+      instagram: 'Instagram',
+      youtube: 'YouTube',
+      telegram: 'Telegram',
+      linkedin: 'LinkedIn',
+      github: 'GitHub',
+      discord: 'Discord',
+      whatsapp: 'WhatsApp'
+    };
+    return names[platform] || platform;
+  };
+
+  // Функція для отримання короткого посилання
+  const getShortUrl = (url) => {
+    try {
+      const urlObj = new URL(url);
+      const path = urlObj.pathname.replace(/\/$/, '');
+      return path.split('/').pop() || urlObj.hostname;
+    } catch {
+      return url.length > 15 ? url.substring(0, 15) + '...' : url;
+    }
+  };
 
   useEffect(() => {
     const fetchProfileAndUser = async () => {
@@ -416,7 +506,7 @@ function PublicProfile() {
               )}
             </div>
             
-            {/* Social links as icons with text */}
+            {/* Social links as compact icons with text */}
             {Object.entries(profile.social_links).some(([_, value]) => value) && (
               <div className="mt-4">
                 <h3 className="text-sm font-medium text-gray-700 mb-2 text-center md:text-left">{t('socialLinks')}</h3>
@@ -428,14 +518,20 @@ function PublicProfile() {
                         href={url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex items-center px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-xs hover:bg-gray-200 transition-colors"
+                        className="flex items-center gap-1.5 px-2 py-1.5 bg-gray-50 hover:bg-gray-100 rounded-lg transition-all duration-200 border border-gray-200 hover:border-gray-300 min-w-0 max-w-full"
+                        title={`${getPlatformName(platform)}: ${url}`}
                       >
-                        <img
-                          src={`https://unpkg.com/simple-icons@v9/icons/${platform}.svg`}
-                          alt={platform}
-                          className="w-3 h-3 mr-1"
-                        />
-                        <span className="truncate max-w-[80px]">{url}</span>
+                        <div className="flex-shrink-0">
+                          {getSocialIconWithGradient(platform)}
+                        </div>
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-xs font-medium text-gray-700 leading-none">
+                            {getPlatformName(platform)}
+                          </span>
+                          <span className="text-xs text-gray-500 truncate max-w-[120px] leading-none mt-0.5">
+                            {getShortUrl(url)}
+                          </span>
+                        </div>
                       </a>
                     )
                   ))}
@@ -492,9 +588,9 @@ function PublicProfile() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.1 }}
-        className="bg-white/95 p-4 md:p-6 rounded-2xl shadow-lg border border-gray-100 backdrop-blur-sm"
+        
       >
-        <h2 className="text-xl font-bold text-gray-900 mb-6 text-center md:text-left">{t('posts')}</h2>
+        
         <SocialFeed userId={userId} />
       </motion.div>
     </div>
