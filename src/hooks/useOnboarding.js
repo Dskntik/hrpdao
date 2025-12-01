@@ -13,10 +13,9 @@ export const useOnboarding = () => {
       setError(null);
 
       const { data, error } = await supabase
-        .from('user_points')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('type', 'onboarding_completion')
+        .from('users')
+        .select('onboarding_completed')
+        .eq('id', userId)
         .single();
 
       if (error && error.code !== 'PGRST116') {
@@ -25,7 +24,7 @@ export const useOnboarding = () => {
         return false;
       }
 
-      const completed = !!data;
+      const completed = data?.onboarding_completed || false;
       setOnboardingCompleted(completed);
       return completed;
     } catch (error) {
@@ -39,39 +38,20 @@ export const useOnboarding = () => {
 
   const awardOnboardingPoints = async (userId) => {
     try {
-      // Check if user already received onboarding points
-      const { data: existingPoints, error: checkError } = await supabase
-        .from('user_points')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('type', 'onboarding_completion')
-        .single();
-
-      if (existingPoints && !checkError) {
-        console.log('User already received onboarding points');
-        return true;
-      }
-
-      // Award 500 points for onboarding completion
+      // Оновлюємо статус онбордингу в таблиці users
       const { data, error } = await supabase
-        .from('user_points')
-        .insert([
-          {
-            user_id: userId,
-            points: 500,
-            type: 'onboarding_completion',
-            description: 'Completed onboarding and passed final test',
-            created_at: new Date().toISOString()
-          }
-        ]);
+        .from('users')
+        .update({ onboarding_completed: true })
+        .eq('id', userId)
+        .select();
 
       if (error) {
-        console.error('Error awarding points:', error);
+        console.error('Error updating onboarding status:', error);
         setError(error);
         return false;
       }
 
-      console.log('Successfully awarded 500 Human Rights Points');
+      console.log('Successfully updated onboarding status');
       setOnboardingCompleted(true);
       return true;
     } catch (error) {
