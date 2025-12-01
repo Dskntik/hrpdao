@@ -3,7 +3,6 @@ import React, { useState, useEffect, Component } from "react";
 import { BrowserRouter, Routes, Route, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { supabase } from "./utils/supabase";
-import { connectWallet } from "./utils/web3";
 import { FaGoogle, FaEye, FaEyeSlash, FaPhone } from "react-icons/fa";
 import { SiEthereum } from "react-icons/si";
 import { motion, AnimatePresence } from "framer-motion";
@@ -61,7 +60,8 @@ class ErrorBoundary extends Component {
   }
 }
 
-function App({ currentUser }) {
+// Окремий компонент для сторінки входу
+function LoginPage({ onLoginSuccess }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   
@@ -98,14 +98,45 @@ function App({ currentUser }) {
     verifyOTP,
     isLoading: authLoading,
     error: authError,
-    setError: setAuthError
+    setError: setAuthError,
+    isWeb3Authenticated,
+    getCurrentWeb3User
   } = useAuth();
+
+  const handlePostLogin = async (user) => {
+    try {
+      console.log("🔄 Processing post-login for user:", user?.id);
+      
+      // Для wallet-користувачів використовуємо localStorage
+      const walletUserData = localStorage.getItem('wallet_user_data');
+      const userId = user?.id || (walletUserData ? JSON.parse(walletUserData).id : null);
+      
+      if (userId) {
+        const onboardingCompleted = await checkOnboardingCompletion(userId);
+        if (onboardingCompleted) {
+          navigate("/country");
+        } else {
+          navigate("/onboarding");
+        }
+      } else {
+        // Якщо ID немає, все одно перенаправляємо на onboarding
+        navigate("/onboarding");
+      }
+      
+      // Викликаємо callback для оновлення стану в батьківському компоненті
+      if (onLoginSuccess) {
+        onLoginSuccess();
+      }
+    } catch (error) {
+      console.error("Error in post-login:", error);
+      setError(t("loginError"));
+    }
+  };
 
   const handleLogin = async (provider = null) => {
     try {
       setLoading(true);
       setError(null);
-      let error;
       
       if (provider === 'phone') {
         if (!loginInput) {
@@ -126,7 +157,14 @@ function App({ currentUser }) {
           provider,
           options: { redirectTo: `${window.location.origin}/onboarding` },
         });
-        error = providerError;
+        
+        if (providerError) {
+          setError(providerError.message);
+          return;
+        }
+        
+        // Для OAuth перенаправлення відбувається автоматично
+        return;
       } else {
         // Email/password login
         if (authMethod === 'email') {
@@ -136,42 +174,52 @@ function App({ currentUser }) {
           }
         }
       }
-      
-      if (error) throw error;
 
     } catch (err) {
       console.error("Login error:", err);
-      setError(t("loginError"));
+      setError(err.message || t("loginError"));
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handlePostLogin = async (user) => {
-    if (user) {
-      const onboardingCompleted = await checkOnboardingCompletion(user.id);
-      if (onboardingCompleted) {
-        navigate("/country");
-      } else {
-        navigate("/onboarding");
-      }
     }
   };
 
   const handleWalletConnect = async () => {
     try {
       setLoading(true);
+      setError(null);
+      
       const address = await handleWalletAuth();
       if (address) {
-        alert((t("walletConnected") || "Wallet connected") + `: ${address}`);
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          await handlePostLogin(user);
+        console.log("✅ Wallet connected successfully:", address);
+        
+        // Для wallet-користувачів використовуємо localStorage
+        const walletUserData = localStorage.getItem('wallet_user_data');
+        if (walletUserData) {
+          const user = JSON.parse(walletUserData);
+          console.log("✅ Wallet user data found:", user);
+          
+          const onboardingCompleted = await checkOnboardingCompletion(user.id);
+          if (onboardingCompleted) {
+            navigate("/country");
+          } else {
+            navigate("/onboarding");
+          }
+          
+          if (onLoginSuccess) {
+            onLoginSuccess();
+          }
+        } else {
+          // Якщо даних немає, все одно перенаправляємо
+          console.log("⚠️ No wallet user data, redirecting to onboarding");
+          navigate("/onboarding");
+          if (onLoginSuccess) {
+            onLoginSuccess();
+          }
         }
       }
     } catch (err) {
       console.error("Wallet connection error:", err);
-      setError(t("walletError"));
+      setError(err.message || t("walletError"));
     } finally {
       setLoading(false);
     }
@@ -440,7 +488,7 @@ function App({ currentUser }) {
             {authMethod === 'email' && (
               <div>
                 <label className="block text-sm font-medium text-blue-950 mb-1.5">
-                  {t("passwordPlaceholder")}
+                  {t("password")}
                 </label>
                 <div className="relative">
                   <input
@@ -449,7 +497,7 @@ function App({ currentUser }) {
                     onChange={(e) => setPassword(e.target.value)}
                     className="w-full px-4 py-2.5 rounded-full border border-gray-200 bg-gray-50 text-blue-950 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 pr-12"
                     placeholder="•••••••••"
-                    aria-label={t("passwordPlaceholder")}
+                    aria-label={t("password")}
                   />
                   <button
                     type="button"
@@ -535,7 +583,7 @@ function App({ currentUser }) {
                   />
                 </svg>
               )}
-              {t("login")}
+              {loading ? t("loading") : t("login")}
             </motion.button>
           </div>
 
@@ -555,6 +603,7 @@ function App({ currentUser }) {
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               onClick={() => handleLogin("google")}
+              disabled={loading}
               className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-full border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 transition-all duration-200 shadow-sm hover:shadow-md text-sm"
               aria-label={t("loginWithGoogle")}
             >
@@ -562,7 +611,17 @@ function App({ currentUser }) {
               <span className="font-medium">Google</span>
             </motion.button>
 
-            {/* Wallet connection button removed as requested */}
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={handleWalletConnect}
+              disabled={loading}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-full border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 transition-all duration-200 shadow-sm hover:shadow-md text-sm"
+              aria-label={t("connectWallet")}
+            >
+              <SiEthereum className="w-4 h-4 text-purple-600" />
+              <span className="font-medium">{t("connectWallet")}</span>
+            </motion.button>
           </div>
 
           <div className="text-center">
@@ -583,20 +642,121 @@ function App({ currentUser }) {
   );
 }
 
+// Головний компонент App
+function App({ currentUser, onUserUpdate }) {
+  const { logout } = useAuth();
+  
+  // Функція для виходу з системи
+  const handleLogout = async () => {
+    try {
+      await logout();
+      if (onUserUpdate) {
+        onUserUpdate();
+      }
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
+  };
+
+  if (currentUser) {
+    // Якщо користувач авторизований - показуємо головний інтерфейс
+    return (
+      <MainLayout currentUser={currentUser} onLogout={handleLogout}>
+        <Country />
+      </MainLayout>
+    );
+  }
+
+  // Якщо користувач не авторизований - показуємо сторінку входу
+  return <LoginPage onLoginSuccess={onUserUpdate} />;
+}
+
+// Основний компонент з маршрутизацією
 export default function AppWrapper() {
   const [currentUser, setCurrentUser] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    const getCurrentUser = async () => {
+  const { getCurrentWeb3User, isWeb3Authenticated, getCurrentUser } = useAuth();
+
+  // Функція для оновлення стану користувача
+  const handleUserUpdate = () => {
+    console.log("🔄 User state update requested");
+    // Запускаємо перевірку користувача знову
+    checkCurrentUser();
+  };
+
+  const checkCurrentUser = async () => {
+    try {
+      setIsLoading(true);
+      console.log("🔄 Checking current user...");
+      
+      // 1. Спочатку перевіряємо Supabase auth
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
+        console.log("✅ Supabase user authenticated:", session.user.id);
         setCurrentUser(session.user);
+        setIsLoading(false);
+        return;
       }
-    };
-    getCurrentUser();
+      
+      // 2. Перевіряємо Web3 аутентифікацію
+      if (isWeb3Authenticated()) {
+        const web3User = getCurrentWeb3User();
+        if (web3User && web3User.id) {
+          console.log("✅ Web3 user authenticated:", web3User.id);
+          setCurrentUser(web3User);
+          setIsLoading(false);
+          return;
+        }
+      }
 
+      // 3. Перевіряємо legacy wallet дані (тільки якщо вони валідні)
+      const legacyWalletData = localStorage.getItem('wallet_user_data');
+      if (legacyWalletData) {
+        try {
+          const legacyUser = JSON.parse(legacyWalletData);
+          // Перевіряємо, чи є у legacy користувача ID та wallet_address
+          if (legacyUser && legacyUser.id && legacyUser.address) {
+            console.log("✅ Legacy wallet user:", legacyUser.id);
+            setCurrentUser(legacyUser);
+            setIsLoading(false);
+            return;
+          } else {
+            console.log("⚠️ Invalid legacy user data, clearing...");
+            localStorage.removeItem('wallet_user_data');
+            localStorage.removeItem('wallet_address');
+          }
+        } catch (error) {
+          console.error("❌ Error parsing legacy user data:", error);
+          localStorage.removeItem('wallet_user_data');
+          localStorage.removeItem('wallet_address');
+        }
+      }
+
+      // Якщо немає жодного валідного користувача
+      console.log("ℹ️ No valid user authenticated");
+      setCurrentUser(null);
+      
+    } catch (error) {
+      console.error('Error getting current user:', error);
+      setCurrentUser(null);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    checkCurrentUser();
+
+    // Слухач змін стану аутентифікації Supabase
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
+      console.log("🔄 Auth state changed:", event);
+      
+      if (event === 'SIGNED_IN' && session?.user) {
+        setCurrentUser(session.user);
+      } else if (event === 'SIGNED_OUT') {
+        setCurrentUser(null);
+      } else if (session?.user) {
         setCurrentUser(session.user);
       } else {
         setCurrentUser(null);
@@ -606,11 +766,26 @@ export default function AppWrapper() {
     return () => subscription.unsubscribe();
   }, []);
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="text-blue-900 text-lg font-semibold flex items-center gap-3"
+        >
+          <div className="w-6 h-6 border-2 border-blue-900 border-t-transparent rounded-full animate-spin"></div>
+          Loading...
+        </motion.div>
+      </div>
+    );
+  }
+
   return (
     <BrowserRouter>
       <ErrorBoundary>
         <Routes>
-          <Route path="/" element={<App currentUser={currentUser} />} />
+          <Route path="/" element={<App currentUser={currentUser} onUserUpdate={handleUserUpdate} />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/post" element={<PostForm />} />
           <Route path="/terms" element={<Terms />} />
