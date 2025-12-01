@@ -1,88 +1,103 @@
-// hooks/useAuth.js
-import { useState } from "react";
+// hooks/useAuth.js - БЕЗ реферальної програми (працює як оригінал)
+import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { supabase } from "../utils/supabase";
-import { connectWallet } from "../utils/web3";
+import { 
+  connectWalletUniversal, 
+  initWeb3AuthOptional, 
+  isWeb3Available,
+  getWalletAddress,
+  getWeb3UserData,
+  disconnectWallet,
+  isValidEthereumAddress
+} from "../utils/web3auth";
 
 export const useAuth = () => {
   const { t } = useTranslation();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [web3User, setWeb3User] = useState(null);
+  const [web3Initialized, setWeb3Initialized] = useState(false);
 
-  // Generate referral code
-  const generateReferralCode = () => {
-    return `HR${Math.random().toString(36).substr(2, 8).toUpperCase()}`;
-  };
+  // Ініціалізація при завантаженні
+  useEffect(() => {
+    const initializeWeb3 = async () => {
+      try {
+        await initWeb3AuthOptional();
+        setWeb3Initialized(true);
+        
+        // Перевіряємо збережені дані гаманця
+        const savedAddress = getWalletAddress();
+        const savedUserData = getWeb3UserData();
+        
+        if (savedAddress && isValidEthereumAddress(savedAddress) && savedUserData) {
+          setWeb3User(savedUserData);
+        } else if (savedAddress && !isValidEthereumAddress(savedAddress)) {
+          console.warn('Invalid stored wallet address, clearing...');
+          disconnectWallet();
+        }
+      } catch (error) {
+        console.warn("Web3 initialization warning:", error);
+        setWeb3Initialized(true);
+      }
+    };
+    
+    initializeWeb3();
+  }, []);
 
-  // Award referral bonus
-  const awardReferralBonus = async (referrerId, referredUserId, points = 50, bonusType = 'onboarding') => {
-    try {
-      const pointsRecord = {
-        user_id: referrerId,
-        points: points,
-        type: 'referral_bonus',
-        description: `Referral bonus for ${referredUserId} - ${bonusType}`,
-        created_at: new Date().toISOString()
-      };
-
-      const { error } = await supabase
-        .from('user_points')
-        .insert([pointsRecord]);
-
-      if (error) throw error;
-
-      console.log(`✓ Referral bonus awarded: ${points} points to ${referrerId}`);
-      return true;
-    } catch (error) {
-      console.error('✗ Error awarding referral bonus:', error);
-      return false;
-    }
-  };
-
-  // Create or update user profile
+  // Створення/оновлення профілю користувача
   const createOrUpdateUserProfile = async (user, userData = {}) => {
     try {
       if (!user || !user.id) {
         throw new Error('User ID is required');
       }
 
+      const phoneValue = user.phone || userData.phone;
+      const processedPhone = phoneValue === "" ? null : phoneValue;
+
       const profileData = {
         id: user.id,
-        username: userData.username || user.user_metadata?.username || user.email?.split('@')[0] || `user_${user.id.slice(0, 8)}`,
-        email: user.email || '',
-        phone: user.phone || userData.phone || '',
+        username: userData.username || user.user_metadata?.username || `user_${user.id.slice(0, 8)}`,
+        email: user.email || userData.email || '',
+        phone: processedPhone || null,
         country: userData.country || 'EARTH',
-        profile_picture: user.user_metadata?.avatar_url || userData.profile_picture || '',
-        bio: userData.bio || '',
-        city: userData.city || '',
-        status: userData.status || '',
+        profile_picture: user.user_metadata?.avatar_url || userData.profile_picture || null,
+        bio: userData.bio || null,
+        city: userData.city || null,
+        status: userData.status || null,
         social_links: userData.social_links || {},
         settings: userData.settings || {},
         role: userData.role || 'user',
         wallet_address: userData.wallet_address || null,
-        birth_date: userData.birthDate || null
+        birth_date: userData.birthDate || null,
+        is_web3_user: userData.wallet_address ? true : false
       };
+
+      // Перевіряємо, чи існує користувач
+      const { data: existingUser } = await supabase
+        .from('users')
+        .select('id')
+        .eq('id', user.id)
+        .maybeSingle();
 
       let result;
 
-      const updateResult = await supabase
-        .from('users')
-        .update(profileData)
-        .eq('id', user.id);
-
-      if (updateResult.error) {
+      if (existingUser) {
+        // Оновлюємо існуючий запис
+        result = await supabase
+          .from('users')
+          .update(profileData)
+          .eq('id', user.id);
+      } else {
+        // Створюємо новий запис (БЕЗ referral_code та referred_by)
         const newUserData = {
           ...profileData,
-          created_at: new Date().toISOString(),
-          referral_code: generateReferralCode(),
-          referred_by: userData.referred_by || null
+          created_at: new Date().toISOString()
         };
         
         result = await supabase
           .from('users')
           .insert([newUserData]);
-      } else {
-        result = updateResult;
       }
 
       if (result.error) {
@@ -90,7 +105,7 @@ export const useAuth = () => {
         return false;
       }
 
-      console.log('✓ User profile created/updated successfully');
+      console.log('✅ User profile created/updated successfully');
       return true;
     } catch (error) {
       console.error('Error in createOrUpdateUserProfile:', error);
@@ -98,57 +113,161 @@ export const useAuth = () => {
     }
   };
 
-  // Process referral system
-  const processReferral = async (referralCode, referredUserId) => {
-    if (!referralCode || !referredUserId) return null;
-
+  // Web3 автентифікація
+  const handleWalletAuth = async (userData = {}) => {
+    setIsLoading(true);
+    setError(null);
+    
     try {
-      const { data: referrer, error } = await supabase
+      console.log("🔄 Starting Web3 authentication...");
+
+      // Перевіряємо доступність Web3
+      if (!isWeb3Available()) {
+        throw new Error(
+          t('noWeb3Wallet') || 'Web3 wallet not found. Please install MetaMask or use email/phone login.'
+        );
+      }
+
+      let connectionResult;
+      
+      try {
+        connectionResult = await connectWalletUniversal();
+      } catch (connectionError) {
+        console.error("❌ Web3 connection failed:", connectionError);
+        throw new Error(
+          connectionError.message || t('walletConnectionFailed') || 'Failed to connect wallet. Please try again or use other login methods.'
+        );
+      }
+
+      const { address } = connectionResult;
+      
+      if (!address || !isValidEthereumAddress(address)) {
+        throw new Error("Invalid wallet address");
+      }
+
+      const normalizedAddress = address.toLowerCase();
+      console.log("✅ Wallet connected:", normalizedAddress);
+
+      // Перевіряємо, чи існує користувач з цією адресою
+      const { data: existingUser, error: userCheckError } = await supabase
         .from('users')
-        .select('id, username, country, referral_code')
-        .eq('referral_code', referralCode)
+        .select('*')
+        .eq('wallet_address', normalizedAddress)
         .maybeSingle();
 
-      if (error || !referrer) {
-        console.error('Invalid referral code:', error);
-        return null;
+      if (userCheckError) {
+        console.error("Database error checking user:", userCheckError);
+        throw new Error('Database error. Please try again later.');
       }
 
-      if (referrer.id === referredUserId) {
-        console.error('User cannot refer themselves');
-        return null;
+      let userId;
+
+      if (existingUser) {
+        // Користувач вже існує
+        console.log("✅ Existing Web3 user found:", existingUser.id);
+        userId = existingUser.id;
+        
+        // Оновлюємо дані користувача якщо надано
+        if (userData.username || userData.country) {
+          const updateData = {};
+          if (userData.username) updateData.username = userData.username;
+          if (userData.country) updateData.country = userData.country;
+          if (userData.birthDate) updateData.birth_date = userData.birthDate;
+
+          const { error: updateError } = await supabase
+            .from('users')
+            .update(updateData)
+            .eq('id', existingUser.id);
+
+          if (updateError) {
+            console.error("Error updating user:", updateError);
+          }
+        }
+      } else {
+        // Створюємо нового користувача
+        console.log("🔄 Creating new Web3 user...");
+        
+        userId = crypto.randomUUID();
+        
+        const profileData = {
+          id: userId,
+          username: userData.username || `user_${normalizedAddress.slice(2, 10)}`,
+          email: `${normalizedAddress}@web3.hrpdao.org`,
+          wallet_address: normalizedAddress,
+          country: userData.country || 'EARTH',
+          profile_picture: null,
+          bio: null,
+          city: null,
+          status: 'active',
+          social_links: {},
+          settings: {},
+          role: 'user',
+          birth_date: userData.birthDate || null,
+          created_at: new Date().toISOString(),
+          is_web3_user: true,
+          onboarding_completed: false
+          // БЕЗ referral_code та referred_by
+        };
+
+        const { data: newUser, error: profileError } = await supabase
+          .from('users')
+          .insert([profileData])
+          .select()
+          .single();
+
+        if (profileError) {
+          console.error("❌ Profile creation failed:", profileError);
+          throw new Error(profileError.message || 'Failed to create user profile');
+        }
+
+        console.log("✅ New Web3 user created:", newUser.id);
       }
 
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({ referred_by: referrer.id })
-        .eq('id', referredUserId);
+      // Зберігаємо дані в localStorage
+      const userDataToStore = {
+        id: userId,
+        address: normalizedAddress,
+        username: userData.username || `user_${normalizedAddress.slice(2, 10)}`,
+        email: `${normalizedAddress}@web3.hrpdao.org`,
+        isWeb3User: true,
+        ...userData
+      };
 
-      if (updateError) {
-        console.error('Error updating referred_by:', updateError);
-        return null;
+      localStorage.setItem('web3_user_data', JSON.stringify(userDataToStore));
+      localStorage.setItem('wallet_address', normalizedAddress);
+      localStorage.setItem('wallet_user_data', JSON.stringify(userDataToStore)); // legacy support
+      setWeb3User(userDataToStore);
+
+      console.log("✅ Web3 authentication completed successfully");
+      return normalizedAddress;
+
+    } catch (err) {
+      console.error("❌ Web3 auth error:", err);
+      
+      // Специфічні повідомлення про помилки
+      if (err.message.includes('rejected')) {
+        setError(t('connectionRejected') || 'Connection request was rejected');
+      } else if (err.message.includes('not found')) {
+        setError(t('noWeb3Wallet') || 'Web3 wallet not found. Please install MetaMask.');
+      } else if (err.message.includes('Invalid')) {
+        setError(t('invalidWallet') || 'Invalid wallet address');
+      } else {
+        setError(err.message || t('walletError') || 'Wallet connection failed');
       }
-
-      await awardReferralBonus(referrer.id, referredUserId, 50, 'onboarding');
-      console.log('🎁 Referral bonus awarded for onboarding');
-
-      return referrer;
-    } catch (error) {
-      console.error('Error processing referral:', error);
-      return null;
+      
+      return false;
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // Google auth with referral support
+  // Google автентифікація (БЕЗ referralCode, але backwards compatible)
   const handleGoogleAuth = async (referralCode = null) => {
     setIsLoading(true);
     setError(null);
     
     try {
-      if (referralCode) {
-        localStorage.setItem('pending_referral', referralCode);
-      }
-
+      // referralCode ігнорується
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
@@ -164,23 +283,21 @@ export const useAuth = () => {
       return true;
     } catch (err) {
       console.error('Google auth error:', err);
-      setError(t('authError'));
+      setError(t('authError') || 'Authentication failed');
       return false;
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Phone auth with referral support
+  // Phone автентифікація (БЕЗ referralCode, але backwards compatible)
   const handlePhoneAuth = async (phone, referralCode = null, userData = {}) => {
     setIsLoading(true);
     setError(null);
     
     try {
-      if (referralCode) {
-        localStorage.setItem('pending_referral', referralCode);
-      }
-
+      // referralCode ігнорується
+      
       if (userData.username || userData.country || userData.birthDate) {
         localStorage.setItem('pending_user_data', JSON.stringify(userData));
       }
@@ -206,78 +323,14 @@ export const useAuth = () => {
       return true;
     } catch (err) {
       console.error('Phone auth error:', err);
-      setError(t('authError'));
+      setError(t('authError') || 'Authentication failed');
       return false;
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Wallet auth with referral support
-  const handleWalletAuth = async (userData = {}) => {
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      const signer = await connectWallet();
-      const address = await signer.getAddress();
-      
-      const walletEmail = `${address.toLowerCase()}@wallet.hrpdao.org`;
-      
-      const { data: { user: existingUser }, error: getUserError } = await supabase.auth.getUser();
-      
-      let currentUser = existingUser;
-
-      if (!existingUser || getUserError) {
-        const { data: authData, error: signUpError } = await supabase.auth.signUp({
-          email: walletEmail,
-          password: crypto.getRandomValues(new Uint8Array(32)).toString() + Math.random().toString(36).slice(2),
-          options: {
-            data: {
-              wallet_address: address,
-              is_wallet_user: true
-            }
-          }
-        });
-        
-        if (signUpError) {
-          if (signUpError.message.includes('already registered')) {
-            currentUser = { id: address, email: walletEmail };
-          } else {
-            throw signUpError;
-          }
-        } else {
-          currentUser = authData.user;
-        }
-      }
-
-      const success = await createOrUpdateUserProfile(currentUser, {
-        ...userData,
-        wallet_address: address,
-        email: walletEmail
-      });
-
-      if (!success) {
-        setError(t('profileUpdateError'));
-        return false;
-      }
-
-      if (userData.referralCode) {
-        await processReferral(userData.referralCode, currentUser.id);
-      }
-
-      console.log("✓ Wallet connected and profile updated:", address);
-      return address;
-    } catch (err) {
-      console.error('Wallet auth error:', err);
-      setError(err.message);
-      return false;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Main signup handler
+  // Email/Password реєстрація (БЕЗ referralCode, але backwards compatible)
   const handleSignup = async (userData) => {
     setIsLoading(true);
     setError(null);
@@ -302,7 +355,7 @@ export const useAuth = () => {
 
         if (error) {
           if (error.message.includes('already registered') || error.status === 422) {
-            setError(t('userAlreadyExists'));
+            setError(t('userAlreadyExists') || 'User already exists');
           } else {
             setError(error.message);
           }
@@ -319,18 +372,17 @@ export const useAuth = () => {
           });
 
           if (!profileSuccess) {
-            setError(t('profileCreationError'));
+            setError(t('profileCreationError') || 'Profile creation failed');
             return false;
           }
 
-          if (referralCode) {
-            await processReferral(referralCode, userId);
-          }
+          // referralCode ігнорується
         }
 
         console.log("✓ User registered successfully");
         return true;
       } else {
+        // Phone registration
         const { data, error } = await supabase.auth.signInWithOtp({
           phone: loginInput,
           options: {
@@ -353,36 +405,7 @@ export const useAuth = () => {
       }
     } catch (err) {
       console.error("Signup error:", err);
-      setError(err.message || t('authError'));
-      return false;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Phone login (OTP)
-  const handlePhoneLogin = async (phone) => {
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      const { data, error } = await supabase.auth.signInWithOtp({
-        phone: phone,
-        options: {
-          channel: 'sms'
-        }
-      });
-
-      if (error) {
-        setError(error.message);
-        return false;
-      }
-
-      console.log("✓ OTP sent for login");
-      return true;
-    } catch (err) {
-      console.error("Phone login error:", err);
-      setError(err.message || t('authError'));
+      setError(err.message || t('authError') || 'Authentication failed');
       return false;
     } finally {
       setIsLoading(false);
@@ -409,14 +432,43 @@ export const useAuth = () => {
       return data.user;
     } catch (err) {
       console.error("Email login error:", err);
-      setError(err.message || t('authError'));
+      setError(err.message || t('authError') || 'Authentication failed');
       return false;
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Verify OTP
+  // Phone login
+  const handlePhoneLogin = async (phone) => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const { data, error } = await supabase.auth.signInWithOtp({
+        phone: phone,
+        options: {
+          channel: 'sms'
+        }
+      });
+
+      if (error) {
+        setError(error.message);
+        return false;
+      }
+
+      console.log("✓ OTP sent for login");
+      return true;
+    } catch (err) {
+      console.error("Phone login error:", err);
+      setError(err.message || t('authError') || 'Authentication failed');
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Verify OTP (БЕЗ referral processing)
   const verifyOTP = async (phone, token) => {
     setIsLoading(true);
     setError(null);
@@ -436,7 +488,6 @@ export const useAuth = () => {
       console.log("✓ OTP verified successfully");
       
       const pendingUserData = localStorage.getItem('pending_user_data');
-      const pendingReferral = localStorage.getItem('pending_referral');
       
       if (data.user) {
         let userData = {};
@@ -448,66 +499,116 @@ export const useAuth = () => {
         
         await createOrUpdateUserProfile(data.user, userData);
         
-        if (pendingReferral) {
-          await processReferral(pendingReferral, data.user.id);
-          localStorage.removeItem('pending_referral');
-        }
+        // БЕЗ referral processing
       }
       
       return data.user;
     } catch (err) {
       console.error("OTP verification error:", err);
-      setError(err.message || t('authError'));
+      setError(err.message || t('authError') || 'Authentication failed');
       return false;
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Complete OAuth signup
-  const completeOAuthSignup = async () => {
+  // Отримання поточного Web3 користувача
+  const getCurrentWeb3User = () => {
     try {
-      const { data: { session }, error } = await supabase.auth.getSession();
-      
-      if (error || !session?.user) {
-        return false;
+      const savedAddress = getWalletAddress();
+      const savedUserData = getWeb3UserData();
+
+      if (savedAddress && isValidEthereumAddress(savedAddress) && savedUserData) {
+        return savedUserData;
       }
 
-      const pendingReferral = localStorage.getItem('pending_referral');
-      
-      await createOrUpdateUserProfile(session.user);
-
-      if (pendingReferral) {
-        await processReferral(pendingReferral, session.user.id);
-        localStorage.removeItem('pending_referral');
+      if (savedAddress && !isValidEthereumAddress(savedAddress)) {
+        console.warn('Clearing invalid wallet data');
+        disconnectWallet();
       }
 
-      return true;
+      return null;
     } catch (error) {
-      console.error('Error completing OAuth signup:', error);
-      return false;
+      console.error('Error getting Web3 user:', error);
+      return null;
     }
   };
 
+  // Перевірка Web3 автентифікації
+  const isWeb3Authenticated = () => {
+    const address = getWalletAddress();
+    return address && isValidEthereumAddress(address);
+  };
+
+  // Уніфікований метод отримання поточного користувача
+  const getCurrentUser = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        return session.user;
+      }
+      
+      const web3Data = getCurrentWeb3User();
+      return web3Data || null;
+    } catch (error) {
+      console.error('Error getting current user:', error);
+      return null;
+    }
+  };
+
+  // Вихід з системи
+  const logout = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('Supabase logout error:', error);
+      }
+      
+      disconnectWallet();
+      
+      localStorage.removeItem('pending_user_data');
+      
+      setWeb3User(null);
+      setError(null);
+      
+      console.log("✅ Logout completed");
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  };
+
+  // Заглушка для processReferral (для backwards compatibility)
+  const processReferral = async (referralCode, referredUserId) => {
+    console.log('ℹ️ Referral system disabled');
+    return null;
+  };
+
   return {
-    // Methods
+    // Методи автентифікації
     handleSignup,
     handleGoogleAuth,
     handlePhoneAuth,
     handleWalletAuth,
-    handlePhoneLogin,
     handleEmailLogin,
+    handlePhoneLogin,
     verifyOTP,
-    createOrUpdateUserProfile,
-    awardReferralBonus,
-    generateReferralCode,
-    processReferral,
-    completeOAuthSignup,
+    logout,
     
-    // State
+    // Web3 методи
+    getCurrentWeb3User,
+    isWeb3Authenticated,
+    
+    // Загальні методи
+    getCurrentUser,
+    createOrUpdateUserProfile,
+    processReferral, // заглушка для backwards compatibility
+    
+    // Стан
     isLoading,
     error,
     setError,
+    web3User,
+    web3Initialized,
     clearError: () => setError(null)
   };
 };
