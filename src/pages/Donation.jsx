@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../utils/supabase';
 import MainLayout from '../components/layout/MainLayout';
 import countries from '../utils/countries';
-import { Heart, Plus, Search, Filter, Globe, Calendar, Image, Video, FileText, X, Upload, Copy, Check, User, Users, MapPin, Eye, Banknote, Wallet, Edit, Trash2 } from 'lucide-react';
+import { Heart, Plus, Search, Filter, Globe, Calendar, Image, Video, FileText, X, Upload, Copy, Check, User, Users, MapPin, Eye, Banknote, Wallet, Edit, Trash2, ArrowLeft, Share2, Coins } from 'lucide-react';
 
 function Donation() {
   const { t, i18n } = useTranslation();
@@ -21,9 +21,23 @@ function Donation() {
   const [copySuccess, setCopySuccess] = useState(null);
 
   const [formData, setFormData] = useState({
-    title: '', description: '', bankAccount: '',
+    title: '', 
+    description: '', 
+    bankAccount: '',
     wallets: { bitcoin: '', ethereum: '', paypal: '' },
-    attachments: []
+    attachments: [],
+    helpTypes: {
+      financial: false,
+      psychological: false,
+      physical: false,
+      medical: false,
+      educational: false,
+      housing: false,
+      food: false,
+      clothing: false,
+      legal: false,
+      employment: false
+    }
   });
 
   useEffect(() => {
@@ -40,7 +54,8 @@ function Donation() {
     const { data: { user }, error } = await supabase.auth.getUser();
     if (error || !user) return setCurrentUser(null);
     const { data: profile } = await supabase.from('users').select('username, profile_picture, country, city, status, bio, social_links').eq('id', user.id).single();
-    setCurrentUser(profile ? { ...user, ...profile } : user);
+    const userWithProfile = profile ? { ...user, ...profile } : user;
+    setCurrentUser(userWithProfile);
   };
 
   const fetchHelpRequests = async () => {
@@ -76,6 +91,7 @@ function Donation() {
   const handleCreateRequest = async (e) => {
     e.preventDefault();
     if (!currentUser?.country) return alert(t('countryRequired') || 'Please add your country in your profile.');
+
     try {
       const uploaded = await Promise.all(formData.attachments.map(async (att) => {
         if (!att.file) return att;
@@ -90,9 +106,15 @@ function Donation() {
       }).filter(Boolean));
 
       const { data } = await supabase.from('help_requests').insert([{
-        user_id: currentUser.id, title: formData.title, description: formData.description,
-        country: currentUser.country, bank_account: formData.bankAccount, wallets: formData.wallets,
-        attachments: uploaded, status: 'active'
+        user_id: currentUser.id, 
+        title: formData.title, 
+        description: formData.description,
+        country: currentUser.country, 
+        bank_account: formData.bankAccount, 
+        wallets: formData.wallets,
+        attachments: uploaded, 
+        help_types: formData.helpTypes,
+        status: 'active'
       }]).select().single();
 
       const { data: user } = await supabase.from('users').select('username, profile_picture, country').eq('id', currentUser.id).single();
@@ -122,9 +144,13 @@ function Donation() {
 
       const updatedAttachments = [...editingRequest.attachments, ...newAttachments];
       const { data } = await supabase.from('help_requests').update({
-        title: formData.title, description: formData.description,
-        bank_account: formData.bankAccount, wallets: formData.wallets,
-        attachments: updatedAttachments, updated_at: new Date().toISOString()
+        title: formData.title, 
+        description: formData.description,
+        bank_account: formData.bankAccount, 
+        wallets: formData.wallets,
+        attachments: updatedAttachments, 
+        help_types: formData.helpTypes,
+        updated_at: new Date().toISOString()
       }).eq('id', editingRequest.id).select().single();
 
       setHelpRequests(prev => prev.map(r => r.id === editingRequest.id ? { ...r, ...data, user: editingRequest.user } : r));
@@ -148,18 +174,71 @@ function Donation() {
     }
   };
 
+  const handleShareRequest = async (request) => {
+    const shareData = {
+      title: request.title,
+      text: request.description,
+      url: window.location.href
+    };
+
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+      } else {
+        await navigator.clipboard.writeText(window.location.href);
+        setCopySuccess('link');
+        setTimeout(() => setCopySuccess(null), 2000);
+      }
+    } catch (err) {
+      console.error('Error sharing:', err);
+    }
+  };
+
   const startEditRequest = (req) => {
     setEditingRequest(req);
     setFormData({
-      title: req.title, description: req.description, bankAccount: req.bank_account || '',
-      wallets: req.wallets || { bitcoin: '', ethereum: '', paypal: '' }, attachments: []
+      title: req.title, 
+      description: req.description, 
+      bankAccount: req.bank_account || '',
+      wallets: req.wallets || { bitcoin: '', ethereum: '', paypal: '' }, 
+      attachments: [],
+      helpTypes: req.help_types || {
+        financial: false,
+        psychological: false,
+        physical: false,
+        medical: false,
+        educational: false,
+        housing: false,
+        food: false,
+        clothing: false,
+        legal: false,
+        employment: false
+      }
     });
     setShowEditForm(true);
   };
 
   const resetForm = () => {
     formData.attachments.forEach(att => att.url?.startsWith('blob:') && URL.revokeObjectURL(att.url));
-    setFormData({ title: '', description: '', bankAccount: '', wallets: { bitcoin: '', ethereum: '', paypal: '' }, attachments: [] });
+    setFormData({ 
+      title: '', 
+      description: '', 
+      bankAccount: '', 
+      wallets: { bitcoin: '', ethereum: '', paypal: '' }, 
+      attachments: [],
+      helpTypes: {
+        financial: false,
+        psychological: false,
+        physical: false,
+        medical: false,
+        educational: false,
+        housing: false,
+        food: false,
+        clothing: false,
+        legal: false,
+        employment: false
+      }
+    });
     setEditingRequest(null);
   };
 
@@ -194,6 +273,16 @@ function Donation() {
     editingRequest?.id === reqId && setEditingRequest(prev => ({ ...prev, attachments: updated }));
   };
 
+  const handleHelpTypeChange = (type) => {
+    setFormData(prev => ({
+      ...prev,
+      helpTypes: {
+        ...prev.helpTypes,
+        [type]: !prev.helpTypes[type]
+      }
+    }));
+  };
+
   const getCountryName = (code) => countries.find(c => c.code === code)?.name[i18n.language] || countries.find(c => c.code === code)?.name.en || code;
   const formatDate = (date) => new Date(date).toLocaleDateString(i18n.language, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   const handleCopyAddress = (addr, type) => { navigator.clipboard.writeText(addr); setCopySuccess(type); setTimeout(() => setCopySuccess(null), 2000); };
@@ -215,161 +304,469 @@ function Donation() {
     </div>
   );
 
+  const helpTypesList = [
+    { key: 'financial', label: 'Фінансова допомога' },
+    { key: 'psychological', label: 'Психологічна підтримка' },
+    { key: 'physical', label: 'Фізична допомога' },
+    { key: 'medical', label: 'Медична допомога' },
+    { key: 'educational', label: 'Освітня допомога'},
+    { key: 'housing', label: 'Житло/Проживання' },
+    { key: 'food', label: 'Продукти харчування' },
+    { key: 'clothing', label: 'Одяг' },
+    { key: 'legal', label: 'Юридична допомога' },
+    { key: 'employment', label: 'Допомога з працевлаштуванням' }
+  ];
+
   if (loading) return <div className="min-h-screen bg-gradient-to-br from-white to-gray-100 flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div></div>;
+
+  // Create Request Modal Content - Updated styles to match Profile page
+  const createRequestContent = (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="min-h-screen bg-gray-50 py-4 px-3 sm:py-8 sm:px-4 overflow-x-hidden"
+    >
+      <div className="max-w-4xl mx-auto w-full min-w-0">
+        <div className="bg-white/95 rounded-2xl shadow-lg p-4 sm:p-6 mb-6 sm:mb-8 border border-blue-100 backdrop-blur-sm min-w-0">
+          {/* Header with Back Button */}
+          <div className="flex items-center gap-4 mb-6">
+            <button
+              onClick={() => setShowCreateForm(false)}
+              className="flex items-center justify-center w-10 h-10 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors"
+            >
+              <ArrowLeft className="text-gray-600 w-4 h-4" />
+            </button>
+            <div>
+              <h1 className="text-xl sm:text-2xl font-bold text-blue-950">
+                {t('createHelpRequest') || 'Create Help Request'}
+              </h1>
+              <p className="text-gray-600 text-sm">
+                Create a new request for help and support
+              </p>
+            </div>
+          </div>
+
+          {/* Create Form */}
+          <form onSubmit={handleCreateRequest} className="space-y-6">
+            <div>
+              <label className="block text-sm font-medium text-blue-950 mb-1.5">
+                {t('requestTitle') || 'Request Title'}
+                <span className="text-red-500 ml-1">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={formData.title}
+                onChange={e => setFormData(p => ({...p, title: e.target.value}))}
+                className="w-full px-4 py-2.5 rounded-full border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-blue-950 text-sm shadow-sm"
+                placeholder={t('enterTitle') || 'Enter a descriptive title'}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-blue-950 mb-1.5">
+                {t('description') || 'Description'}
+                <span className="text-red-500 ml-1">*</span>
+              </label>
+              <textarea
+                required
+                value={formData.description}
+                onChange={e => setFormData(p => ({...p, description: e.target.value}))}
+                rows={4}
+                className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 resize-none text-blue-950 text-sm shadow-sm"
+                placeholder={t('enterDescription') || 'Describe your situation...'}
+              />
+            </div>
+
+            {/* Help Types Selection */}
+            <div>
+              <label className="block text-sm font-medium text-blue-950 mb-3">
+                {t('helpTypes') || 'Типи допомоги'}
+                <span className="text-red-500 ml-1">*</span>
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {helpTypesList.map((helpType) => (
+                  <label
+                    key={helpType.key}
+                    className={`flex items-center gap-3 p-3 border rounded-xl cursor-pointer transition-all duration-200 ${
+                      formData.helpTypes[helpType.key]
+                        ? 'bg-blue-50 border-blue-300 shadow-sm'
+                        : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={formData.helpTypes[helpType.key]}
+                      onChange={() => handleHelpTypeChange(helpType.key)}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-2xl">{helpType.icon}</span>
+                    <span className="text-sm font-medium text-blue-950">{helpType.label}</span>
+                  </label>
+                ))}
+              </div>
+              {Object.values(formData.helpTypes).every(val => !val) && (
+                <p className="text-xs text-red-600 mt-2">Будь ласка, оберіть принаймні один тип допомоги</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-blue-950 mb-1.5">
+                {t('country') || 'Country'}
+                <span className="text-red-500 ml-1">*</span>
+              </label>
+              <div className="w-full px-4 py-2.5 rounded-full border border-gray-200 bg-gray-50 text-blue-950 text-sm shadow-sm">
+                {currentUser?.country ? (
+                  <div className="flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-green-600"/>
+                    <span className="font-medium">{getCountryName(currentUser.country)}</span>
+                    <span className="text-xs text-gray-500 ml-auto">(auto from profile)</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-amber-600">
+                    <Globe className="w-4 h-4"/>
+                    <span>Country not set in profile</span>
+                  </div>
+                )}
+              </div>
+              {!currentUser?.country && <p className="text-xs text-amber-600 mt-1">Please add country in your profile.</p>}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-blue-950 mb-1.5">
+                {t('bankAccount') || 'Bank Account'}
+              </label>
+              <input
+                type="text"
+                value={formData.bankAccount}
+                onChange={e => setFormData(p => ({...p, bankAccount: e.target.value}))}
+                className="w-full px-4 py-2.5 rounded-full border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-blue-950 text-sm shadow-sm"
+                placeholder={t('enterBankAccount') || 'Bank account details...'}
+              />
+            </div>
+
+            <div>
+              <h3 className="text-lg font-medium text-blue-900 mb-3">{t('cryptoWallets') || 'Crypto Wallets'}</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {['Bitcoin', 'Ethereum', 'PayPal'].map((name) => {
+                  const key = name.toLowerCase();
+                  return (
+                    <div key={key}>
+                      <label className="block text-sm font-medium text-blue-950 mb-1.5">
+                        {name}
+                      </label>
+                      <input
+                        type={name === 'PayPal' ? 'email' : 'text'}
+                        value={formData.wallets[key]}
+                        onChange={e => setFormData(p => ({...p, wallets: {...p.wallets, [key]: e.target.value}}))}
+                        className="w-full px-4 py-2.5 rounded-full border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-blue-950 text-sm shadow-sm"
+                        placeholder={name === 'PayPal' ? 'PayPal email' : `${name} address`}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-blue-950 mb-1.5">
+                {t('attachments') || 'Attachments'}
+              </label>
+              <div className="border-2 border-dashed border-gray-300 rounded-2xl p-6 text-center">
+                <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2"/>
+                <p className="text-sm text-gray-500 mb-2">{t('uploadFiles') || 'Upload files (Max 50MB)'}</p>
+                <p className="text-xs text-gray-400 mb-4">JPG, PNG, GIF, WebP, MP4, WebM, PDF, DOC, DOCX</p>
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*,video/*,.pdf,.doc,.docx"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                  id="file-upload"
+                />
+                <label
+                  htmlFor="file-upload"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-full transition-colors cursor-pointer text-sm"
+                >
+                  <Upload className="w-4 h-4"/>
+                  {t('chooseFiles') || 'Choose Files'}
+                </label>
+              </div>
+              
+              {formData.attachments.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  {formData.attachments.map(att => (
+                    <div key={att.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        {att.type === 'image' ? <Image className="w-5 h-5 text-blue-600"/> : 
+                         att.type === 'video' ? <Video className="w-5 h-5 text-red-600"/> : 
+                         <FileText className="w-5 h-5 text-green-600"/>}
+                        <div>
+                          <span className="text-sm text-gray-700 block">{att.name}</span>
+                          <span className="text-xs text-gray-500">{Math.round(att.file.size / 1024)} KB</span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeAttachment(att.id)}
+                        className="p-1 hover:bg-gray-200 rounded-full transition-colors"
+                      >
+                        <X className="w-4 h-4 text-gray-500"/>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-col sm:flex-row gap-3 pt-4">
+              <button
+                type="button"
+                onClick={() => { resetForm(); setShowCreateForm(false); }}
+                className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-full hover:bg-gray-50 transition-colors font-medium shadow-sm"
+              >
+                {t('cancel') || 'Cancel'}
+              </button>
+              <button
+                type="submit"
+                disabled={Object.values(formData.helpTypes).every(val => !val)}
+                className={`flex-1 px-6 py-3 rounded-full transition-all duration-300 font-medium shadow-md hover:shadow-lg flex items-center justify-center gap-2 ${
+                  Object.values(formData.helpTypes).every(val => !val)
+                    ? 'bg-gray-400 cursor-not-allowed text-white'
+                    : 'bg-gradient-to-r from-blue-900 via-blue-800 to-blue-700 text-white hover:from-blue-950 hover:via-blue-900 hover:to-blue-800'
+                }`}
+              >
+                <Heart className="w-4 h-4" />
+                {t('createRequest') || 'Create Request'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </motion.div>
+  );
 
   return (
     <MainLayout currentUser={currentUser}>
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="min-h-screen bg-gray-50 py-8">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="bg-white/95 rounded-2xl shadow-lg p-6 mb-8 border border-blue-100 backdrop-blur-sm">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-3">
-                <div className="bg-red-100 p-3 rounded-full"><Heart className="w-6 h-6 text-red-600" fill="currentColor"/></div>
-                <div><h1 className="text-2xl font-bold text-blue-950">{t('helpRequests') || 'Help Requests'}</h1><p className="text-blue-950 text-sm opacity-80">{t('helpRequestsDescription') || 'Find and create requests for help and support'}</p></div>
+      <AnimatePresence mode="wait">
+        {showCreateForm ? (
+          <motion.div
+            key="create-modal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            {createRequestContent}
+          </motion.div>
+        ) : (
+          <motion.div
+            key="main-content"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="min-h-screen bg-gray-50 py-8"
+          >
+            <div className="max-w-7xl mx-auto px-4">
+              <div className="bg-white/95 rounded-2xl shadow-lg p-6 mb-8 border border-blue-100 backdrop-blur-sm">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-red-100 p-3 rounded-full"><Heart className="w-6 h-6 text-red-600" fill="currentColor"/></div>
+                    <div><h1 className="text-2xl font-bold text-blue-950">{t('helpRequests') || 'Help Requests'}</h1><p className="text-blue-950 text-sm opacity-80">{t('helpRequestsDescription') || 'Find and create requests for help and support'}</p></div>
+                  </div>
+                  <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => currentUser?.country ? setShowCreateForm(true) : alert('Please add your country in your profile.')} className="flex items-center gap-2 px-4 sm:px-6 py-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors shadow-md w-full sm:w-auto justify-center">
+                    <Plus className="w-4 h-4"/><span>{t('createRequest') || 'Create Request'}</span>
+                  </motion.button>
+                </div>
+                
+                {/* Search and Filters */}
+                <div className="space-y-4 mb-6">
+                  {/* Search field full width */}
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4"/>
+                    <input 
+                      type="text" 
+                      placeholder={t('searchRequests') || 'Search requests...'} 
+                      value={searchTerm} 
+                      onChange={e => setSearchTerm(e.target.value)} 
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-full focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm shadow-sm"
+                    />
+                  </div>
+                  
+                  {/* Two equal filter fields */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="relative">
+                      <Globe className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4"/>
+                      <select 
+                        value={selectedCountry} 
+                        onChange={e => setSelectedCountry(e.target.value)} 
+                        className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-full focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none text-sm shadow-sm"
+                      >
+                        <option value="all">{t('allCountries') || 'All Countries'}</option>
+                        {getUniqueCountries().map(c => <option key={c} value={c}>{getCountryName(c)}</option>)}
+                      </select>
+                    </div>
+                    <div className="relative">
+                      <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4"/>
+                      <select 
+                        value={dateFilter} 
+                        onChange={e => setDateFilter(e.target.value)} 
+                        className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-full focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none text-sm shadow-sm"
+                      >
+                        <option value="all">{t('allTime') || 'All Time'}</option>
+                        <option value="today">{t('today') || 'Today'}</option>
+                        <option value="week">{t('thisWeek') || 'This Week'}</option>
+                        <option value="month">{t('thisMonth') || 'This Month'}</option>
+                        <option value="year">{t('thisYear') || 'This Year'}</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="text-sm text-gray-600 flex items-center">Found: {filteredRequests.length} of {helpRequests.length} requests</div>
               </div>
-              <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => currentUser?.country ? setShowCreateForm(true) : alert('Please add your country in your profile.')} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors shadow-md">
-                <Plus className="w-4 h-4"/><span>{t('createRequest') || 'Create Request'}</span>
-              </motion.button>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-              <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4"/><input type="text" placeholder={t('searchRequests') || 'Search requests...'} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-full focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm shadow-sm"/></div>
-              <div className="relative"><Globe className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4"/><select value={selectedCountry} onChange={e => setSelectedCountry(e.target.value)} className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-full focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none text-sm shadow-sm">
-                <option value="all">{t('allCountries') || 'All Countries'}</option>
-                {getUniqueCountries().map(c => <option key={c} value={c}>{getCountryName(c)}</option>)}
-              </select></div>
-              <div className="relative"><Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4"/><select value={dateFilter} onChange={e => setDateFilter(e.target.value)} className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-full focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none text-sm shadow-sm">
-                <option value="all">{t('allTime') || 'All Time'}</option>
-                <option value="today">{t('today') || 'Today'}</option>
-                <option value="week">{t('thisWeek') || 'This Week'}</option>
-                <option value="month">{t('thisMonth') || 'This Month'}</option>
-                <option value="year">{t('thisYear') || 'This Year'}</option>
-              </select></div>
-            </div>
-            <div className="text-sm text-gray-600 flex items-center">Found: {filteredRequests.length} of {helpRequests.length} requests</div>
-          </div>
 
-          {copySuccess && <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-4 p-4 bg-green-50 text-green-800 rounded-xl border border-green-100 flex items-center gap-3 shadow-sm"><Check className="w-5 h-5 text-green-600 flex-shrink-0"/><p className="font-medium">{t('copiedToClipboard') || 'Address copied to clipboard!'}</p></motion.div>}
+              {copySuccess && <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-4 p-4 bg-green-50 text-green-800 rounded-xl border border-green-100 flex items-center gap-3 shadow-sm"><Check className="w-5 h-5 text-green-600 flex-shrink-0"/><p className="font-medium">{t('copiedToClipboard') || 'Address copied to clipboard!'}</p></motion.div>}
 
-          {filteredRequests.length === 0 ? (
-            <div className="bg-white p-8 rounded-2xl text-center border border-gray-200">
-              <Heart className="text-gray-400 w-16 h-16 mx-auto mb-4"/>
-              <h3 className="text-lg font-semibold text-gray-700 mb-2">{helpRequests.length === 0 ? 'No help requests yet' : 'No requests found'}</h3>
-              <p className="text-gray-600 mb-6">{helpRequests.length === 0 ? 'Be the first to create a help request.' : 'Try changing your search parameters.'}</p>
-              <button onClick={() => setShowCreateForm(true)} className="px-6 py-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors font-medium">{t('createFirstRequest') || 'Create First Request'}</button>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {filteredRequests.map((req, i) => (
-                <motion.div key={req.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: i * 0.1 }} className="bg-white border border-gray-200 rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 transform hover:-translate-y-1">
-                  <div className="p-4 border-b border-gray-100">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-3">
-                        <img src={req.user?.profile_picture || '/default-avatar.png'} alt={req.user?.username} className="w-10 h-10 rounded-full object-cover" onError={e => e.target.src = '/default-avatar.png'}/>
-                        <div><h3 className="font-semibold text-blue-950">{req.user?.username || 'User'}</h3><div className="flex items-center gap-2 text-sm text-gray-500"><Globe className="w-3 h-3"/><span>{getCountryName(req.country)}</span><Calendar className="w-3 h-3 ml-2"/><span>{formatDate(req.created_at)}</span></div></div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`px-2 py-1 text-xs rounded-full font-medium ${req.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>{req.status}</span>
-                        {isUserRequest(req) && (
-                          <div className="flex gap-1">
-                            <button onClick={() => startEditRequest(req)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-full transition-colors" title="Edit"><Edit className="w-4 h-4"/></button>
-                            <button onClick={() => handleDeleteRequest(req.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded-full transition-colors" title="Delete"><Trash2 className="w-4 h-4"/></button>
+              {filteredRequests.length === 0 ? (
+                <div className="bg-white p-8 rounded-2xl text-center border border-gray-200">
+                  <Heart className="text-gray-400 w-16 h-16 mx-auto mb-4"/>
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">{helpRequests.length === 0 ? 'No help requests yet' : 'No requests found'}</h3>
+                  <p className="text-gray-600 mb-6">{helpRequests.length === 0 ? 'Be the first to create a help request.' : 'Try changing your search parameters.'}</p>
+                  <button onClick={() => setShowCreateForm(true)} className="px-6 py-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors font-medium">{t('createFirstRequest') || 'Create First Request'}</button>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {filteredRequests.map((req, i) => (
+                    <motion.div key={req.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: i * 0.1 }} className="bg-white border border-gray-200 rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 transform hover:-translate-y-1">
+                      <div className="p-4 border-b border-gray-100">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-3">
+                            <img src={req.user?.profile_picture || '/default-avatar.png'} alt={req.user?.username} className="w-10 h-10 rounded-full object-cover" onError={e => e.target.src = '/default-avatar.png'}/>
+                            <div><h3 className="font-semibold text-blue-950">{req.user?.username || 'User'}</h3><div className="flex items-center gap-2 text-sm text-gray-500"><Globe className="w-3 h-3"/><span>{getCountryName(req.country)}</span><Calendar className="w-3 h-3 ml-2"/><span>{formatDate(req.created_at)}</span></div></div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button 
+                              onClick={() => handleShareRequest(req)}
+                              className="flex items-center gap-1 px-3 py-1 bg-blue-100 text-blue-800 hover:bg-blue-200 rounded-full transition-colors text-xs font-medium"
+                              title="Share this request"
+                            >
+                              <Share2 className="w-3 h-3"/>
+                              Share
+                            </button>
+                            {isUserRequest(req) && (
+                              <div className="flex gap-1">
+                                <button onClick={() => startEditRequest(req)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-full transition-colors" title="Edit"><Edit className="w-4 h-4"/></button>
+                                <button onClick={() => handleDeleteRequest(req.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded-full transition-colors" title="Delete"><Trash2 className="w-4 h-4"/></button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <h4 className="text-lg font-bold text-blue-600">{req.title}</h4>
+                        {/* Display Help Types */}
+                        {req.help_types && (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {helpTypesList.map(helpType => 
+                              req.help_types[helpType.key] && (
+                                <span key={helpType.key} className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
+                                  <span>{helpType.icon}</span>
+                                  <span>{helpType.label}</span>
+                                </span>
+                              )
+                            )}
                           </div>
                         )}
                       </div>
-                    </div>
-                    <h4 className="text-lg font-bold text-blue-600">{req.title}</h4>
-                  </div>
-                  <div className="p-4 space-y-4">
-                    <p className="text-gray-600 text-sm leading-relaxed whitespace-pre-line">{req.description}</p>
-                    {req.attachments?.length > 0 && <div><p className="text-sm font-medium text-gray-700 mb-2">Attachments:</p>{renderAttachmentsPreview(req.attachments, req.id, isUserRequest(req))}</div>}
-                    {(req.bank_account || req.wallets) && (
-                      <div className="bg-blue-50 rounded-lg p-4">
-                        <h5 className="font-semibold text-blue-900 text-sm mb-3 flex items-center gap-2"><Banknote className="w-4 h-4"/>Donation Information</h5>
-                        <div className="space-y-2">
-                          {req.bank_account && <div className="flex items-center justify-between text-sm text-blue-800"><div className="flex items-center gap-2"><Wallet className="w-3 h-3"/><span><strong>Bank:</strong> {req.bank_account}</span></div><button onClick={() => handleCopyAddress(req.bank_account, 'bank')} className="p-1 hover:bg-blue-100 rounded transition-colors" title="Copy"><Copy className="w-3 h-3"/></button></div>}
-                          {req.wallets?.bitcoin && <div className="flex items-center justify-between text-sm text-blue-800"><div className="flex items-center gap-2"><Wallet className="w-3 h-3"/><span><strong>Bitcoin:</strong> {req.wallets.bitcoin.slice(0,10)}...</span></div><button onClick={() => handleCopyAddress(req.wallets.bitcoin, 'bitcoin')} className="p-1 hover:bg-blue-100 rounded transition-colors" title="Copy"><Copy className="w-3 h-3"/></button></div>}
-                          {req.wallets?.ethereum && <div className="flex items-center justify-between text-sm text-blue-800"><div className="flex items-center gap-2"><Wallet className="w-3 h-3"/><span><strong>Ethereum:</strong> {req.wallets.ethereum.slice(0,10)}...</span></div><button onClick={() => handleCopyAddress(req.wallets.ethereum, 'ethereum')} className="p-1 hover:bg-blue-100 rounded transition-colors" title="Copy"><Copy className="w-3 h-3"/></button></div>}
-                          {req.wallets?.paypal && <div className="flex items-center justify-between text-sm text-blue-800"><div className="flex items-center gap-2"><Wallet className="w-3 h-3"/><span><strong>PayPal:</strong> {req.wallets.paypal}</span></div><button onClick={() => handleCopyAddress(req.wallets.paypal, 'paypal')} className="p-1 hover:bg-blue-100 rounded transition-colors" title="Copy"><Copy className="w-3 h-3"/></button></div>}
-                        </div>
+                      <div className="p-4 space-y-4">
+                        <p className="text-gray-600 text-sm leading-relaxed whitespace-pre-line">{req.description}</p>
+                        {req.attachments?.length > 0 && <div><p className="text-sm font-medium text-gray-700 mb-2">Attachments:</p>{renderAttachmentsPreview(req.attachments, req.id, isUserRequest(req))}</div>}
+                        {(req.bank_account || req.wallets) && (
+                          <div className="bg-blue-50 rounded-lg p-4">
+                            <h5 className="font-semibold text-blue-900 text-sm mb-3 flex items-center gap-2"><Banknote className="w-4 h-4"/>Donation Information</h5>
+                            <div className="space-y-2">
+                              {req.bank_account && <div className="flex items-center justify-between text-sm text-blue-800"><div className="flex items-center gap-2"><Wallet className="w-3 h-3"/><span><strong>Bank:</strong> {req.bank_account}</span></div><button onClick={() => handleCopyAddress(req.bank_account, 'bank')} className="p-1 hover:bg-blue-100 rounded transition-colors" title="Copy"><Copy className="w-3 h-3"/></button></div>}
+                              {req.wallets?.bitcoin && <div className="flex items-center justify-between text-sm text-blue-800"><div className="flex items-center gap-2"><Wallet className="w-3 h-3"/><span><strong>Bitcoin:</strong> {req.wallets.bitcoin.slice(0,10)}...</span></div><button onClick={() => handleCopyAddress(req.wallets.bitcoin, 'bitcoin')} className="p-1 hover:bg-blue-100 rounded transition-colors" title="Copy"><Copy className="w-3 h-3"/></button></div>}
+                              {req.wallets?.ethereum && <div className="flex items-center justify-between text-sm text-blue-800"><div className="flex items-center gap-2"><Wallet className="w-3 h-3"/><span><strong>Ethereum:</strong> {req.wallets.ethereum.slice(0,10)}...</span></div><button onClick={() => handleCopyAddress(req.wallets.ethereum, 'ethereum')} className="p-1 hover:bg-blue-100 rounded transition-colors" title="Copy"><Copy className="w-3 h-3"/></button></div>}
+                              {req.wallets?.paypal && <div className="flex items-center justify-between text-sm text-blue-800"><div className="flex items-center gap-2"><Wallet className="w-3 h-3"/><span><strong>PayPal:</strong> {req.wallets.paypal}</span></div><button onClick={() => handleCopyAddress(req.wallets.paypal, 'paypal')} className="p-1 hover:bg-blue-100 rounded transition-colors" title="Copy"><Copy className="w-3 h-3"/></button></div>}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                </motion.div>
-              ))}
+                    </motion.div>
+                  ))}
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-        <AnimatePresence>
-          {showCreateForm && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setShowCreateForm(false)}>
-              <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                <div className="p-6 border-b border-gray-200 flex justify-between items-center"><h2 className="text-xl font-bold text-blue-950">{t('createHelpRequest') || 'Create Help Request'}</h2><button onClick={() => setShowCreateForm(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><X className="w-5 h-5"/></button></div>
-                <form onSubmit={handleCreateRequest} className="p-6 space-y-6">
-                  <div><label className="block text-sm font-medium text-blue-950 mb-2">{t('requestTitle') || 'Request Title'} *</label><input type="text" required value={formData.title} onChange={e => setFormData(p => ({...p, title: e.target.value}))} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-blue-950 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder={t('enterTitle') || 'Enter a descriptive title'}/></div>
-                  <div><label className="block text-sm font-medium text-blue-950 mb-2">{t('description') || 'Description'} *</label><textarea required value={formData.description} onChange={e => setFormData(p => ({...p, description: e.target.value}))} rows={4} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-blue-950 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none" placeholder={t('enterDescription') || 'Describe your situation...'}/></div>
-                  <div><label className="block text-sm font-medium text-blue-950 mb-2">{t('country') || 'Country'} *</label><div className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-blue-950 text-sm shadow-sm">{currentUser?.country ? <div className="flex items-center gap-2"><Globe className="w-4 h-4 text-green-600"/><span className="font-medium">{getCountryName(currentUser.country)}</span><span className="text-xs text-gray-500 ml-auto">(auto from profile)</span></div> : <div className="flex items-center gap-2 text-amber-600"><Globe className="w-4 h-4"/><span>Country not set in profile</span></div>}</div>{!currentUser?.country && <p className="text-xs text-amber-600 mt-1">Please add country in your profile.</p>}</div>
-                  <div><label className="block text-sm font-medium text-blue-950 mb-2">{t('bankAccount') || 'Bank Account'}</label><input type="text" value={formData.bankAccount} onChange={e => setFormData(p => ({...p, bankAccount: e.target.value}))} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-blue-950 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder={t('enterBankAccount') || 'Bank account details...'}/></div>
-                  <div className="space-y-3"><label className="block text-sm font-medium text-blue-950">{t('cryptoWallets') || 'Crypto Wallets'}</label>
-                    {['Bitcoin', 'Ethereum', 'PayPal'].map((name, i) => {
-                      const key = name.toLowerCase();
-                      return <div key={key}><label className="block text-xs text-gray-500 mb-1">{name}</label><input type={name === 'PayPal' ? 'email' : 'text'} value={formData.wallets[key]} onChange={e => setFormData(p => ({...p, wallets: {...p.wallets, [key]: e.target.value}}))} className="w-full px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 text-blue-950 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder={name === 'PayPal' ? 'PayPal email' : `${name} address`}/></div>;
-                    })}
+      <AnimatePresence>
+        {showEditForm && editingRequest && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => { setShowEditForm(false); setEditingRequest(null); resetForm(); }}>
+            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              <div className="p-6 border-b border-gray-200 flex justify-between items-center"><h2 className="text-xl font-bold text-blue-950">{t('editHelpRequest') || 'Edit Help Request'}</h2><button onClick={() => { setShowEditForm(false); setEditingRequest(null); resetForm(); }} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><X className="w-5 h-5"/></button></div>
+              <form onSubmit={handleEditRequest} className="p-6 space-y-6">
+                <div><label className="block text-sm font-medium text-blue-950 mb-2">{t('requestTitle') || 'Request Title'} *</label><input type="text" required value={formData.title} onChange={e => setFormData(p => ({...p, title: e.target.value}))} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-blue-950 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder={t('enterTitle') || 'Enter a descriptive title'}/></div>
+                <div><label className="block text-sm font-medium text-blue-950 mb-2">{t('description') || 'Description'} *</label><textarea required value={formData.description} onChange={e => setFormData(p => ({...p, description: e.target.value}))} rows={4} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-blue-950 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none" placeholder={t('enterDescription') || 'Describe your situation...'}/></div>
+                
+                {/* Help Types in Edit Form */}
+                <div>
+                  <label className="block text-sm font-medium text-blue-950 mb-3">
+                    {t('helpTypes') || 'Типи допомоги'}
+                    <span className="text-red-500 ml-1">*</span>
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {helpTypesList.map((helpType) => (
+                      <label
+                        key={helpType.key}
+                        className={`flex items-center gap-3 p-3 border rounded-xl cursor-pointer transition-all duration-200 ${
+                          formData.helpTypes[helpType.key]
+                            ? 'bg-blue-50 border-blue-300 shadow-sm'
+                            : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={formData.helpTypes[helpType.key]}
+                          onChange={() => handleHelpTypeChange(helpType.key)}
+                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-2xl">{helpType.icon}</span>
+                        <span className="text-sm font-medium text-blue-950">{helpType.label}</span>
+                      </label>
+                    ))}
                   </div>
-                  <div><label className="block text-sm font-medium text-blue-950 mb-2">{t('attachments') || 'Attachments'}</label><div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center"><Upload className="w-8 h-8 text-gray-400 mx-auto mb-2"/><p className="text-sm text-gray-500 mb-2">{t('uploadFiles') || 'Upload files (Max 50MB)'}</p><p className="text-xs text-gray-400 mb-4">JPG, PNG, GIF, WebP, MP4, WebM, PDF, DOC, DOCX</p><input type="file" multiple accept="image/*,video/*,.pdf,.doc,.docx" onChange={handleFileUpload} className="hidden" id="file-upload"/><label htmlFor="file-upload" className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-full transition-colors cursor-pointer text-sm"><Upload className="w-4 h-4"/>{t('chooseFiles') || 'Choose Files'}</label></div>
-                    {formData.attachments.length > 0 && <div className="mt-4 space-y-2">{formData.attachments.map(att => (
-                      <div key={att.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <div className="flex items-center gap-3">{att.type === 'image' ? <Image className="w-5 h-5 text-blue-600"/> : att.type === 'video' ? <Video className="w-5 h-5 text-red-600"/> : <FileText className="w-5 h-5 text-green-600"/>}<div><span className="text-sm text-gray-700 block">{att.name}</span><span className="text-xs text-gray-500">{Math.round(att.file.size / 1024)} KB</span></div></div>
-                        <button type="button" onClick={() => removeAttachment(att.id)} className="p-1 hover:bg-gray-200 rounded-full transition-colors"><X className="w-4 h-4 text-gray-500"/></button>
-                      </div>
-                    ))}</div>}
-                  </div>
-                  <div className="flex gap-3 pt-4">
-                    <button type="button" onClick={() => { resetForm(); setShowCreateForm(false); }} className="flex-1 px-6 py-3 rounded-full border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors">{t('cancel') || 'Cancel'}</button>
-                    <button type="submit" className="flex-1 px-6 py-3 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition-colors font-medium">{t('createRequest') || 'Create Request'}</button>
-                  </div>
-                </form>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+                </div>
 
-        <AnimatePresence>
-          {showEditForm && editingRequest && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => { setShowEditForm(false); setEditingRequest(null); resetForm(); }}>
-              <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                <div className="p-6 border-b border-gray-200 flex justify-between items-center"><h2 className="text-xl font-bold text-blue-950">{t('editHelpRequest') || 'Edit Help Request'}</h2><button onClick={() => { setShowEditForm(false); setEditingRequest(null); resetForm(); }} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><X className="w-5 h-5"/></button></div>
-                <form onSubmit={handleEditRequest} className="p-6 space-y-6">
-                  {/* Same as create form, but with existing attachments */}
-                  <div><label className="block text-sm font-medium text-blue-950 mb-2">{t('requestTitle') || 'Request Title'} *</label><input type="text" required value={formData.title} onChange={e => setFormData(p => ({...p, title: e.target.value}))} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-blue-950 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder={t('enterTitle') || 'Enter a descriptive title'}/></div>
-                  <div><label className="block text-sm font-medium text-blue-950 mb-2">{t('description') || 'Description'} *</label><textarea required value={formData.description} onChange={e => setFormData(p => ({...p, description: e.target.value}))} rows={4} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-blue-950 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none" placeholder={t('enterDescription') || 'Describe your situation...'}/></div>
-                  <div><label className="block text-sm font-medium text-blue-950 mb-2">{t('country') || 'Country'} *</label><div className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-blue-950 text-sm shadow-sm">{currentUser?.country ? <div className="flex items-center gap-2"><Globe className="w-4 h-4 text-green-600"/><span className="font-medium">{getCountryName(currentUser.country)}</span><span className="text-xs text-gray-500 ml-auto">(auto from profile)</span></div> : <div className="flex items-center gap-2 text-amber-600"><Globe className="w-4 h-4"/><span>Country not set</span></div>}</div></div>
-                  <div><label className="block text-sm font-medium text-blue-950 mb-2">{t('bankAccount') || 'Bank Account'}</label><input type="text" value={formData.bankAccount} onChange={e => setFormData(p => ({...p, bankAccount: e.target.value}))} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-blue-950 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder={t('enterBankAccount') || 'Bank account details...'}/></div>
-                  <div className="space-y-3"><label className="block text-sm font-medium text-blue-950">{t('cryptoWallets') || 'Crypto Wallets'}</label>
-                    {['Bitcoin', 'Ethereum', 'PayPal'].map((name, i) => {
-                      const key = name.toLowerCase();
-                      return <div key={key}><label className="block text-xs text-gray-500 mb-1">{name}</label><input type={name === 'PayPal' ? 'email' : 'text'} value={formData.wallets[key]} onChange={e => setFormData(p => ({...p, wallets: {...p.wallets, [key]: e.target.value}}))} className="w-full px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 text-blue-950 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder={name === 'PayPal' ? 'PayPal email' : `${name} address`}/></div>;
-                    })}
-                  </div>
-                  {editingRequest.attachments?.length > 0 && <div><label className="block text-sm font-medium text-blue-950 mb-2">{t('existingAttachments') || 'Existing Attachments'}</label>{renderAttachmentsPreview(editingRequest.attachments, editingRequest.id, true)}</div>}
-                  <div><label className="block text-sm font-medium text-blue-950 mb-2">{t('newAttachments') || 'Add New Attachments'}</label><div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center"><Upload className="w-8 h-8 text-gray-400 mx-auto mb-2"/><p className="text-sm text-gray-500 mb-2">{t('uploadFiles') || 'Upload files (Max 50MB)'}</p><p className="text-xs text-gray-400 mb-4">JPG, PNG, GIF, WebP, MP4, WebM, PDF, DOC, DOCX</p><input type="file" multiple accept="image/*,video/*,.pdf,.doc,.docx" onChange={handleFileUpload} className="hidden" id="file-upload-edit"/><label htmlFor="file-upload-edit" className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-full transition-colors cursor-pointer text-sm"><Upload className="w-4 h-4"/>{t('chooseFiles') || 'Choose Files'}</label></div>
-                    {formData.attachments.length > 0 && <div className="mt-4 space-y-2">{formData.attachments.map(att => (
-                      <div key={att.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <div className="flex items-center gap-3">{att.type === 'image' ? <Image className="w-5 h-5 text-blue-600"/> : att.type === 'video' ? <Video className="w-5 h-5 text-red-600"/> : <FileText className="w-5 h-5 text-green-600"/>}<div><span className="text-sm text-gray-700 block">{att.name}</span><span className="text-xs text-gray-500">{Math.round(att.file.size / 1024)} KB</span></div></div>
-                        <button type="button" onClick={() => removeAttachment(att.id)} className="p-1 hover:bg-gray-200 rounded-full transition-colors"><X className="w-4 h-4 text-gray-500"/></button>
-                      </div>
-                    ))}</div>}
-                  </div>
-                  <div className="flex gap-3 pt-4">
-                    <button type="button" onClick={() => { setShowEditForm(false); setEditingRequest(null); resetForm(); }} className="flex-1 px-6 py-3 rounded-full border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors">{t('cancel') || 'Cancel'}</button>
-                    <button type="submit" className="flex-1 px-6 py-3 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition-colors font-medium">{t('updateRequest') || 'Update Request'}</button>
-                  </div>
-                </form>
-              </motion.div>
+                <div><label className="block text-sm font-medium text-blue-950 mb-2">{t('country') || 'Country'} *</label><div className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-blue-950 text-sm shadow-sm">{currentUser?.country ? <div className="flex items-center gap-2"><Globe className="w-4 h-4 text-green-600"/><span className="font-medium">{getCountryName(currentUser.country)}</span><span className="text-xs text-gray-500 ml-auto">(auto from profile)</span></div> : <div className="flex items-center gap-2 text-amber-600"><Globe className="w-4 h-4"/><span>Country not set</span></div>}</div></div>
+                <div><label className="block text-sm font-medium text-blue-950 mb-2">{t('bankAccount') || 'Bank Account'}</label><input type="text" value={formData.bankAccount} onChange={e => setFormData(p => ({...p, bankAccount: e.target.value}))} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-blue-950 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder={t('enterBankAccount') || 'Bank account details...'}/></div>
+                <div className="space-y-3"><label className="block text-sm font-medium text-blue-950">{t('cryptoWallets') || 'Crypto Wallets'}</label>
+                  {['Bitcoin', 'Ethereum', 'PayPal'].map((name, i) => {
+                    const key = name.toLowerCase();
+                    return <div key={key}><label className="block text-xs text-gray-500 mb-1">{name}</label><input type={name === 'PayPal' ? 'email' : 'text'} value={formData.wallets[key]} onChange={e => setFormData(p => ({...p, wallets: {...p.wallets, [key]: e.target.value}}))} className="w-full px-4 py-2 rounded-xl border border-gray-200 bg-gray-50 text-blue-950 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder={name === 'PayPal' ? 'PayPal email' : `${name} address`}/></div>;
+                  })}
+                </div>
+                {editingRequest.attachments?.length > 0 && <div><label className="block text-sm font-medium text-blue-950 mb-2">{t('existingAttachments') || 'Existing Attachments'}</label>{renderAttachmentsPreview(editingRequest.attachments, editingRequest.id, true)}</div>}
+                <div><label className="block text-sm font-medium text-blue-950 mb-2">{t('newAttachments') || 'Add New Attachments'}</label><div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center"><Upload className="w-8 h-8 text-gray-400 mx-auto mb-2"/><p className="text-sm text-gray-500 mb-2">{t('uploadFiles') || 'Upload files (Max 50MB)'}</p><p className="text-xs text-gray-400 mb-4">JPG, PNG, GIF, WebP, MP4, WebM, PDF, DOC, DOCX</p><input type="file" multiple accept="image/*,video/*,.pdf,.doc,.docx" onChange={handleFileUpload} className="hidden" id="file-upload-edit"/><label htmlFor="file-upload-edit" className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-full transition-colors cursor-pointer text-sm"><Upload className="w-4 h-4"/>{t('chooseFiles') || 'Choose Files'}</label></div>
+                  {formData.attachments.length > 0 && <div className="mt-4 space-y-2">{formData.attachments.map(att => (
+                    <div key={att.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div className="flex items-center gap-3">{att.type === 'image' ? <Image className="w-5 h-5 text-blue-600"/> : att.type === 'video' ? <Video className="w-5 h-5 text-red-600"/> : <FileText className="w-5 h-5 text-green-600"/>}<div><span className="text-sm text-gray-700 block">{att.name}</span><span className="text-xs text-gray-500">{Math.round(att.file.size / 1024)} KB</span></div></div>
+                      <button type="button" onClick={() => removeAttachment(att.id)} className="p-1 hover:bg-gray-200 rounded-full transition-colors"><X className="w-4 h-4 text-gray-500"/></button>
+                    </div>
+                  ))}</div>}
+                </div>
+                <div className="flex gap-3 pt-4">
+                  <button type="button" onClick={() => { setShowEditForm(false); setEditingRequest(null); resetForm(); }} className="flex-1 px-6 py-3 rounded-full border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors">{t('cancel') || 'Cancel'}</button>
+                  <button type="submit" className="flex-1 px-6 py-3 rounded-full bg-blue-600 text-white hover:bg-blue-700 transition-colors font-medium">{t('updateRequest') || 'Update Request'}</button>
+                </div>
+              </form>
             </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </MainLayout>
   );
 }
