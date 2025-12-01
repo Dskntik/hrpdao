@@ -2,11 +2,12 @@ import React, { useState, useEffect, useRef, Fragment } from 'react';
 import { supabase } from '../utils/supabase';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { FaSearch, FaPlus, FaUsers, FaLock, FaGlobe, FaEdit, FaTrash, FaSignOutAlt, FaTimes } from 'react-icons/fa';
+import { FaSearch, FaPlus, FaUsers, FaLock, FaGlobe, FaEdit, FaTrash, FaSignOutAlt, FaTimes, FaArrowLeft } from 'react-icons/fa';
 import { Dialog, Transition } from '@headlessui/react';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import MainLayout from '../components/layout/MainLayout';
+import { motion, AnimatePresence } from 'framer-motion';
 
 function Community() {
   const { t } = useTranslation();
@@ -430,6 +431,188 @@ function Community() {
     </div>
   );
 
+  // Create Community Modal Content - Updated to match Profile edit style
+  const createCommunityContent = (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="min-h-screen bg-gray-50 py-4 px-3 sm:py-8 sm:px-4 overflow-x-hidden"
+    >
+      <div className="max-w-4xl mx-auto w-full min-w-0">
+        <div className="bg-white/95 rounded-2xl shadow-lg p-4 sm:p-6 mb-6 sm:mb-8 border border-blue-100 backdrop-blur-sm min-w-0">
+          {/* Header with Back Button */}
+          <div className="flex items-center gap-4 mb-6">
+            <button
+              onClick={() => setIsCreateModalOpen(false)}
+              className="flex items-center justify-center w-10 h-10 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors"
+            >
+              <FaArrowLeft className="text-gray-600 w-4 h-4" />
+            </button>
+            <div>
+              <h1 className="text-xl sm:text-2xl font-bold text-blue-950">
+                {t('createCommunity')}
+              </h1>
+              <p className="text-gray-600 text-sm">
+                {t('createCommunityDescription')}
+              </p>
+            </div>
+          </div>
+
+          {/* Create Form */}
+          <div className="space-y-6">
+            <div>
+              <label className="block text-sm font-medium text-blue-950 mb-1.5">
+                {t('communityName')}
+                <span className="text-red-500 ml-1">*</span>
+              </label>
+              <input
+                type="text"
+                value={newCommunity.name}
+                onChange={(e) => setNewCommunity({ ...newCommunity, name: e.target.value })}
+                className="w-full px-4 py-2.5 rounded-full border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-blue-950 text-sm shadow-sm"
+                placeholder={t('communityName')}
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-blue-950 mb-1.5">
+                {t('description')}
+                <span className="text-red-500 ml-1">*</span>
+              </label>
+              <textarea
+                value={newCommunity.description}
+                onChange={(e) => setNewCommunity({ ...newCommunity, description: e.target.value })}
+                rows="4"
+                className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 resize-none text-blue-950 text-sm shadow-sm"
+                placeholder={t('description')}
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-blue-950 mb-1.5">
+                {t('category')}
+                <span className="text-red-500 ml-1">*</span>
+              </label>
+              <select
+                value={newCommunity.category}
+                onChange={(e) => setNewCommunity({ ...newCommunity, category: e.target.value })}
+                className="w-full px-4 py-2.5 rounded-full border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 appearance-none bg-white text-blue-950 text-sm shadow-sm"
+                required
+              >
+                <option value="">{t('selectCategory')}</option>
+                {categories.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-blue-950 mb-1.5">
+                {t('coverImage')}
+              </label>
+              <div className="flex items-center space-x-4">
+                <div className="relative">
+                  {filePreview ? (
+                    <img
+                      src={filePreview}
+                      alt={t('coverImagePreview')}
+                      className="w-20 h-20 rounded-xl object-cover border-4 border-white shadow-md"
+                    />
+                  ) : (
+                    <div className="w-20 h-20 rounded-xl bg-gray-100 border-4 border-white shadow-md flex items-center justify-center">
+                      <span className="text-gray-400 text-xs text-center">No image</span>
+                    </div>
+                  )}
+                  {filePreview && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewCommunity({ ...newCommunity, cover_image: null });
+                        setFilePreview(null);
+                      }}
+                      className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
+                    >
+                      <FaTimes className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-col gap-2">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => handleFileChange(e)}
+                    className="hidden"
+                    id="cover-image"
+                  />
+                  <label
+                    htmlFor="cover-image"
+                    className="cursor-pointer bg-blue-500 text-white px-4 py-2 rounded-full text-sm font-medium hover:bg-blue-600 transition-colors text-center shadow-sm"
+                  >
+                    {t('upload')}
+                  </label>
+                  <p className="text-xs text-gray-500">
+                    JPG, PNG, max 5MB
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-blue-950 mb-1.5">
+                {t('privacy')}
+              </label>
+              <select
+                value={newCommunity.privacy}
+                onChange={(e) => setNewCommunity({ ...newCommunity, privacy: e.target.value })}
+                className="w-full px-4 py-2.5 rounded-full border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 appearance-none bg-white text-blue-950 text-sm shadow-sm"
+              >
+                <option value="public">{t('public')}</option>
+                <option value="private">{t('private')}</option>
+                <option value="secret">{t('secret')}</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-blue-950 mb-1.5">
+                {t('rules')}
+              </label>
+              <textarea
+                value={newCommunity.rules}
+                onChange={(e) => setNewCommunity({ ...newCommunity, rules: e.target.value })}
+                rows="4"
+                className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 resize-none text-blue-950 text-sm shadow-sm"
+                placeholder={t('rulesPlaceholder')}
+              />
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-col sm:flex-row gap-3 pt-4">
+              <button
+                onClick={() => setIsCreateModalOpen(false)}
+                className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-full hover:bg-gray-50 transition-colors font-medium shadow-sm"
+              >
+                {t('cancel')}
+              </button>
+              <button
+                onClick={handleCreateCommunity}
+                disabled={loading}
+                className="flex-1 px-6 py-3 bg-gradient-to-r from-blue-900 via-blue-800 to-blue-700 text-white rounded-full hover:from-blue-950 hover:via-blue-900 hover:to-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 font-medium shadow-md hover:shadow-lg"
+              >
+                {loading ? t('creating') : t('create')}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+
+  // Main Community Content
   const communityContent = (
     <div className="space-y-3 sm:space-y-4">
       <div className="bg-white/95 p-6 rounded-2xl shadow-lg border border-blue-100 backdrop-blur-sm mb-6">
@@ -573,149 +756,7 @@ function Community() {
         </div>
       </div>
 
-      {/* Modals */}
-      <Transition appear show={isCreateModalOpen} as={Fragment}>
-        <Dialog as="div" className="relative z-10" onClose={() => setIsCreateModalOpen(false)}>
-          <Transition.Child
-            as={Fragment}
-            enter="ease-out duration-300"
-            enterFrom="opacity-0"
-            enterTo="opacity-100"
-            leave="ease-in duration-200"
-            leaveFrom="opacity-100"
-            leaveTo="opacity-0"
-          >
-            <div className="fixed inset-0 bg-black bg-opacity-25" />
-          </Transition.Child>
-          <div className="fixed inset-0 overflow-y-auto">
-            <div className="flex min-h-full items-center justify-center p-4 text-center">
-              <Transition.Child
-                as={Fragment}
-                enter="ease-out duration-300"
-                enterFrom="opacity-0 scale-95"
-                enterTo="opacity-100 scale-100"
-                leave="ease-in duration-200"
-                leaveFrom="opacity-100 scale-100"
-                leaveTo="opacity-0 scale-95"
-              >
-                <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-2xl bg-white/95 p-6 text-left align-middle shadow-xl transition-all backdrop-blur-sm border border-blue-100">
-                  <Dialog.Title as="h3" className="text-lg font-semibold leading-6 text-blue-950 mb-4">
-                    {t('createCommunity')}
-                  </Dialog.Title>
-                  <div className="mt-2 space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-blue-950 mb-1">{t('communityName')} *</label>
-                      <input
-                        type="text"
-                        value={newCommunity.name}
-                        onChange={(e) => setNewCommunity({ ...newCommunity, name: e.target.value })}
-                        className="w-full px-4 py-2.5 rounded-full border border-gray-200 bg-gray-50 text-blue-950 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-                        aria-label={t('communityName')}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-blue-950 mb-1">{t('description')} *</label>
-                      <textarea
-                        value={newCommunity.description}
-                        onChange={(e) => setNewCommunity({ ...newCommunity, description: e.target.value })}
-                        className="w-full resize-y px-4 py-3 rounded-2xl border border-gray-200 bg-gray-50 text-blue-950 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-                        rows="3"
-                        aria-label={t('description')}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-blue-950 mb-1">{t('category')} *</label>
-                      <select
-                        value={newCommunity.category}
-                        onChange={(e) => setNewCommunity({ ...newCommunity, category: e.target.value })}
-                        className="w-full px-4 py-2.5 rounded-full border border-gray-200 bg-gray-50 text-blue-950 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-                        aria-label={t('category')}
-                        required
-                      >
-                        <option value="">{t('selectCategory')}</option>
-                        {categories.map((category) => (
-                          <option key={category} value={category}>
-                            {category}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-blue-950 mb-1">{t('coverImage')}</label>
-                      {filePreview && (
-                        <div className="relative mb-2">
-                          <img src={filePreview} alt="Preview" className="w-full h-32 object-cover rounded-xl" />
-                          <button
-                            onClick={() => {
-                              setNewCommunity({ ...newCommunity, cover_image: null });
-                              setFilePreview(null);
-                            }}
-                            className="absolute top-2 right-2 bg-blue-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-blue-700"
-                            aria-label={t('removeFile')}
-                          >
-                            ×
-                          </button>
-                        </div>
-                      )}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => handleFileChange(e)}
-                        className="w-full text-blue-800 mt-2 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-medium file:bg-blue-100 file:text-blue-800 hover:file:bg-blue-200"
-                        aria-label={t('coverImage')}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-blue-950 mb-1">{t('privacy')}</label>
-                      <select
-                        value={newCommunity.privacy}
-                        onChange={(e) => setNewCommunity({ ...newCommunity, privacy: e.target.value })}
-                        className="w-full px-4 py-2.5 rounded-full border border-gray-200 bg-gray-50 text-blue-950 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-                        aria-label={t('privacy')}
-                      >
-                        <option value="public">{t('public')}</option>
-                        <option value="private">{t('private')}</option>
-                        <option value="secret">{t('secret')}</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-blue-950 mb-1">{t('rules')}</label>
-                      <textarea
-                        value={newCommunity.rules}
-                        onChange={(e) => setNewCommunity({ ...newCommunity, rules: e.target.value })}
-                        className="w-full resize-y px-4 py-3 rounded-2xl border border-gray-200 bg-gray-50 text-blue-950 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-                        rows="3"
-                        aria-label={t('rules')}
-                        placeholder={t('rulesPlaceholder')}
-                      />
-                    </div>
-                  </div>
-                  <div className="mt-6 flex gap-3 justify-end">
-                    <button
-                      type="button"
-                      className="px-4 py-2 text-blue-800 bg-white border border-blue-200 rounded-full hover:bg-blue-50 focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
-                      onClick={() => setIsCreateModalOpen(false)}
-                    >
-                      {t('cancel')}
-                    </button>
-                    <button
-                      type="button"
-                      className="px-4 py-2 bg-gradient-to-r from-blue-900 via-blue-800 to-blue-700 text-white rounded-full hover:from-blue-950 hover:via-blue-900 hover:to-blue-800 focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all duration-300 disabled:opacity-50 shadow-md hover:shadow-lg"
-                      onClick={handleCreateCommunity}
-                      disabled={loading}
-                    >
-                      {loading ? t('creating') : t('create')}
-                    </button>
-                  </div>
-                </Dialog.Panel>
-              </Transition.Child>
-            </div>
-          </div>
-        </Dialog>
-      </Transition>
-
+      {/* Edit Modal (unchanged) */}
       <Transition appear show={isEditModalOpen} as={Fragment}>
         <Dialog as="div" className="relative z-10" onClose={() => setIsEditModalOpen(false)}>
           <Transition.Child
@@ -866,7 +907,29 @@ function Community() {
     <MainLayout 
       currentUser={currentUser}
     >
-      {communityContent}
+      <AnimatePresence mode="wait">
+        {isCreateModalOpen ? (
+          <motion.div
+            key="create-modal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            {createCommunityContent}
+          </motion.div>
+        ) : (
+          <motion.div
+            key="community-content"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            {communityContent}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </MainLayout>
   );
 }
