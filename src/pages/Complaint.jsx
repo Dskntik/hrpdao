@@ -85,7 +85,6 @@ function Complaint() {
     violation_time: '',
     violation_address: '',
     violation_action: '',
-    violation_consequences: '',
     violation_tools: '',
     description: '',
   });
@@ -326,7 +325,6 @@ function Complaint() {
         violation_time: formData.violation_time || null,
         violation_address: formData.violation_address,
         violation_action: formData.violation_action,
-        violation_consequences: formData.violation_consequences,
         violation_tools: formData.violation_tools,
         content: formData.description,
         evidence_urls: evidenceUrls.length > 0 ? evidenceUrls : null,
@@ -350,7 +348,6 @@ function Complaint() {
         violation_time: '',
         violation_address: '',
         violation_action: '',
-        violation_consequences: '',
         violation_tools: '',
         description: '' 
       });
@@ -394,25 +391,6 @@ function Complaint() {
       transition={{ duration: 0.5 }}
       className="bg-white/95 p-6 rounded-2xl shadow-lg relative overflow-hidden border border-blue-100 backdrop-blur-sm"
     >
-      {isModerator && (
-        <div className="absolute top-4 right-4 flex gap-2">
-          <button
-            onClick={navigateToModeration}
-            className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-full text-sm font-medium transition-colors shadow-md"
-          >
-            <Settings className="w-4 h-4" />
-            Moderation
-          </button>
-          <button
-            onClick={navigateToViolators}
-            className="flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-full text-sm font-medium transition-colors shadow-md"
-          >
-            <Shield className="w-4 h-4" />
-            Verified
-          </button>
-        </div>
-      )}
-
       <div className="relative z-10">
         <p className="text-center mt-2 mb-4 text-blue-950 text-sm opacity-80">
           {t('complaint.subtitle') || 'Share your complaints'}
@@ -590,7 +568,7 @@ function Complaint() {
                   </>
                 )}
               </div>
- 
+
               {showSuggestions && addressSuggestions.length > 0 && (
                 <motion.div 
                   initial={{ opacity: 0, y: -10 }}
@@ -644,20 +622,6 @@ function Complaint() {
                 className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 resize-vertical min-h-[50px] text-blue-950 text-sm shadow-sm"
                 rows={2}
                 required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-blue-950 mb-1.5">
-                {t('complaint.violationConsequences') || 'Consequences of the violation'}
-              </label>
-              <textarea
-                name="violation_consequences"
-                value={formData.violation_consequences}
-                onChange={handleInputChange}
-                placeholder={t('complaint.violationConsequencesPlaceholder') || 'Describe the consequences of the rights violation'}
-                className="w-full px-4 py-2.5 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 resize-vertical min-h-[40px] text-blue-950 text-sm shadow-sm"
-                rows={2}
               />
             </div>
 
