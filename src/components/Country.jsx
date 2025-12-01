@@ -9,10 +9,11 @@ import CreatePostModal from './CreatePostModal';
 import MainLayout from '../components/layout/MainLayout';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { FaInfoCircle, FaMapMarkerAlt } from 'react-icons/fa';
+import { FaInfoCircle, FaMapMarkerAlt, FaUsers } from 'react-icons/fa';
 import { motion } from 'framer-motion';
-import { ChevronDown } from 'lucide-react';
-
+import { ChevronDown, X } from 'lucide-react';
+import { useGeolocation } from '../hooks/useGeolocation';
+ 
 // Lucide Icons for map
 import { 
   MapPin, 
@@ -82,12 +83,14 @@ const countryViewConfigs = {
 const defaultCountryView = { center: [50.0, 10.0], zoom: 4 };
 const worldView = { center: [20, 0], zoom: 2 };
 
-function MapController({ filteredViolations, userCountry, initialCenter, initialZoom }) {
+function MapController({ filteredViolations, userCountry, initialCenter, initialZoom, showAllCountries }) {
   const map = useMap();
   const prevFilteredRef = useRef([]);
 
   useEffect(() => {
-    if (filteredViolations.length > 0) {
+    if (showAllCountries) {
+      map.setView(worldView.center, worldView.zoom);
+    } else if (filteredViolations.length > 0) {
       const points = filteredViolations.map(v => [v.coordinates.lat, v.coordinates.lng]);
       const bounds = L.latLngBounds(points);
       map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12 });
@@ -101,7 +104,7 @@ function MapController({ filteredViolations, userCountry, initialCenter, initial
     if (currentIds !== prevIds) {
       prevFilteredRef.current = filteredViolations;
     }
-  }, [filteredViolations, userCountry, map]);
+  }, [filteredViolations, userCountry, map, showAllCountries]);
 
   useEffect(() => {
     map.setView(initialCenter, initialZoom);
@@ -110,15 +113,92 @@ function MapController({ filteredViolations, userCountry, initialCenter, initial
   return null;
 }
 
+// Modal component for displaying country users
+function CountryUsersModal({ isOpen, onClose, users, countryName }) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+
+  if (!isOpen) return null;
+
+  const handleUserClick = (userId) => {
+    navigate(`/public/${userId}`);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.9 }}
+        className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[80vh] overflow-hidden"
+      >
+        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+          <h2 className="text-xl font-bold text-gray-900">
+            {t('usersFromCountry', { country: countryName }) || `Users from ${countryName}`}
+          </h2>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+          >
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+        
+        <div className="overflow-y-auto max-h-[60vh] p-6">
+          {users.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              {t('noUsersInCountry') || 'No users found in this country'}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {users.map((user) => (
+                <motion.div
+                  key={user.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
+                  onClick={() => handleUserClick(user.id)}
+                >
+                  <img
+                    src={user.profile_picture || '/default-avatar.png'}
+                    alt={user.username}
+                    className="w-12 h-12 rounded-full object-cover"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-gray-900 truncate">{user.username}</h3>
+                    {user.status && (
+                      <p className="text-sm text-gray-600 truncate">{user.status}</p>
+                    )}
+                    {user.city && (
+                      <p className="text-xs text-gray-500 truncate">{user.city}</p>
+                    )}
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          )}
+        </div>
+        
+        <div className="flex justify-end p-6 border-t border-gray-200">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+          >
+            {t('close') || 'Close'}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 function Country() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [country, setCountry] = useState('');
   const [userCountry, setUserCountry] = useState(null);
   const [error, setError] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [geoData, setGeoData] = useState(null);
-  const [geolocationAccepted, setGeolocationAccepted] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [freedomRatings, setFreedomRatings] = useState({
     speech_freedom: 0,
@@ -142,6 +222,23 @@ function Country() {
   const [mapLoading, setMapLoading] = useState(true);
   const [initialCenter, setInitialCenter] = useState([20, 0]);
   const [initialZoom, setInitialZoom] = useState(2);
+
+  // New state for users modal
+  const [showUsersModal, setShowUsersModal] = useState(false);
+
+  // New state for all countries data
+  const [allUsers, setAllUsers] = useState([]);
+  const [allViolations, setAllViolations] = useState([]);
+  const [allFreedomRatings, setAllFreedomRatings] = useState({
+    speech_freedom: 0,
+    economic_freedom: 0,
+    political_freedom: 0,
+    human_rights_freedom: 0,
+    overall_freedom: 0,
+  });
+
+  // Use geolocation hook
+  const { getGeolocation, isLoading: geolocationLoading, error: geolocationError } = useGeolocation();
 
   const centerColumnRef = useRef(null);
 
@@ -195,6 +292,65 @@ function Country() {
     fetchCurrentUser();
   }, []);
 
+  const fetchAllUsers = async () => {
+    try {
+      const { data: usersData, error: usersError } = await supabase
+        .from('users')
+        .select('id, username, profile_picture, country, city, status, bio');
+      
+      if (usersError) throw usersError;
+      setAllUsers(usersData || []);
+    } catch (err) {
+      console.error('Error loading all users:', err);
+    }
+  };
+
+  const fetchAllFreedomRatings = async () => {
+    try {
+      const { data: ratingsData, error: ratingsError } = await supabase
+        .from('freedom_ratings')
+        .select('speech_freedom, economic_freedom, political_freedom, human_rights_freedom');
+
+      if (ratingsError && ratingsError.code !== 'PGRST116') throw ratingsError;
+
+      if (ratingsData && ratingsData.length > 0) {
+        const validRatings = ratingsData.filter(rating => 
+          rating.speech_freedom !== null && rating.economic_freedom !== null && 
+          rating.political_freedom !== null && rating.human_rights_freedom !== null
+        );
+
+        if (validRatings.length > 0) {
+          const averages = validRatings.reduce(
+            (acc, curr) => ({
+              speech_freedom: acc.speech_freedom + (parseInt(curr.speech_freedom) || 0),
+              economic_freedom: acc.economic_freedom + (parseInt(curr.economic_freedom) || 0),
+              political_freedom: acc.political_freedom + (parseInt(curr.political_freedom) || 0),
+              human_rights_freedom: acc.human_rights_freedom + (parseInt(curr.human_rights_freedom) || 0),
+            }),
+            { speech_freedom: 0, economic_freedom: 0, political_freedom: 0, human_rights_freedom: 0 }
+          );
+
+          const count = validRatings.length;
+          const updatedRatings = {
+            speech_freedom: (averages.speech_freedom / count).toFixed(1),
+            economic_freedom: (averages.economic_freedom / count).toFixed(1),
+            political_freedom: (averages.political_freedom / count).toFixed(1),
+            human_rights_freedom: (averages.human_rights_freedom / count).toFixed(1),
+            overall_freedom: (
+              (averages.speech_freedom + averages.economic_freedom + 
+               averages.political_freedom + averages.human_rights_freedom) /
+              (count * 4)
+            ).toFixed(1)
+          };
+          
+          setAllFreedomRatings(updatedRatings);
+        }
+      }
+    } catch (err) {
+      console.error('Error loading all freedom ratings:', err);
+    }
+  };
+
   const fetchViolations = async () => {
     try {
       const { data, error } = await supabase
@@ -207,6 +363,7 @@ function Country() {
           )
         `)
         .eq('status', 'verified')
+        .eq('hidden', false)
         .not('coordinates', 'is', null)
         .order('created_at', { ascending: false });
 
@@ -217,6 +374,7 @@ function Country() {
       );
 
       setViolations(validViolations);
+      setAllViolations(validViolations);
 
       if (!userCountry && validViolations.length > 0) {
         const first = validViolations[0];
@@ -232,67 +390,49 @@ function Country() {
 
   useEffect(() => {
     fetchViolations();
+    fetchAllUsers();
+    fetchAllFreedomRatings();
   }, [country]); 
 
-  const handleGeolocation = () => {
-    setIsLoading(true);
-    setError(null);
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        async (pos) => {
-          const { latitude, longitude } = pos.coords;
-          try {
-            const response = await fetch(
-              `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`
-            );
-            const data = await response.json();
-            const countryCode = countries.find(c => c.name.en === data.countryName)?.code || '';
-            if (countryCode) {
-              setCountry(countryCode);
-              setGeolocationAccepted(true);
-              await fetchCountryData(countryCode);
-            } else {
-              setError(t('countryNotFound') || 'Country not found');
-            }
-            setIsLoading(false);
-          } catch (err) {
-            console.error('Geolocation error:', err);
-            setError(t('geolocationError') || 'Error getting geolocation');
-            setIsLoading(false);
-          }
-        },
-        (err) => {
-          console.error('Geolocation error:', err);
-          setError(t('geolocationNotSupported') || 'Geolocation not supported or access denied');
-          setIsLoading(false);
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 60000
-        }
-      );
-    } else {
-      setError(t('geolocationNotSupported') || 'Geolocation not supported by your browser');
-      setIsLoading(false);
+  const handleGeolocation = async () => {
+    try {
+      const countryCode = await getGeolocation();
+      if (countryCode) {
+        setCountry(countryCode);
+        await fetchCountryData(countryCode);
+      }
+    } catch (err) {
+      setError(err.message);
     }
   };
 
   const fetchCountryData = async (countryCode) => {
     setIsLoadingData(true);
     try {
-      const { data: usersData, error: usersError } = await supabase
+      // Виправлення: якщо вибрано "EARTH" або пусте значення, завантажуємо всіх користувачів
+      let usersQuery = supabase
         .from('users')
-        .select('id, username, profile_picture, country, city, status, bio')
-        .eq('country', countryCode);
+        .select('id, username, profile_picture, country, city, status, bio');
+      
+      if (countryCode && countryCode !== 'EARTH' && countryCode !== '') {
+        usersQuery = usersQuery.eq('country', countryCode);
+      }
+      
+      const { data: usersData, error: usersError } = await usersQuery;
       
       if (usersError) throw usersError;
       setUsers(usersData || []);
 
-      const { data: ratingsData, error: ratingsError } = await supabase
+      // Виправлення: для "EARTH" або пустого значення завантажуємо рейтинги всіх країн
+      let ratingsQuery = supabase
         .from('freedom_ratings')
-        .select('speech_freedom, economic_freedom, political_freedom, human_rights_freedom')
-        .eq('country_code', countryCode);
+        .select('speech_freedom, economic_freedom, political_freedom, human_rights_freedom');
+
+      if (countryCode && countryCode !== 'EARTH' && countryCode !== '') {
+        ratingsQuery = ratingsQuery.eq('country_code', countryCode);
+      }
+
+      const { data: ratingsData, error: ratingsError } = await ratingsQuery;
 
       if (ratingsError && ratingsError.code !== 'PGRST116') throw ratingsError;
 
@@ -389,7 +529,10 @@ function Country() {
     navigate(`/public/${userId}`);
   };
 
-  const countryName = countries.find((c) => c.code === country)?.name[i18n.language] || t('unknown');
+  // Виправлення: для "EARTH" або пустого значення показуємо "Planet Earth"
+  const countryName = country === 'EARTH' || country === '' || country === 'all'
+    ? (t('planetEarth') || 'Planet Earth')
+    : countries.find((c) => c.code === country)?.name[i18n.language] || t('unknown');
 
   const getStatusBadge = (status) => {
     return {
@@ -407,9 +550,13 @@ function Country() {
     return country ? (country.name[i18n.language] || country.name.en) : code;
   };
 
-  const filteredViolations = violations.filter(violation => 
-    violation.country === country
-  );
+  // Виправлення: для "EARTH" або пустого значення показуємо всі порушення та користувачів
+  const filteredViolations = country === 'EARTH' || country === '' || country === 'all' 
+    ? allViolations 
+    : violations.filter(violation => violation.country === country);
+
+  const currentUsers = country === 'EARTH' || country === '' || country === 'all' ? allUsers : users;
+  const currentFreedomRatings = country === 'EARTH' || country === '' || country === 'all' ? allFreedomRatings : freedomRatings;
 
   // Add debug for verification
   console.log('Country currentUser:', currentUser);
@@ -417,7 +564,7 @@ function Country() {
 
   const countryContent = (
     <div className="space-y-4">
-      {country && (
+      {(country || country === 'EARTH' || country === '' || country === 'all') && (
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -425,15 +572,34 @@ function Country() {
           className="bg-white/95 p-4 md:p-6 rounded-2xl shadow-lg border border-gray-100 backdrop-blur-sm"
         >
           <div className="flex flex-col md:flex-row md:items-center justify-between mb-4">
-            <div className="mt-2 md:mt-0">
-              <div className="bg-red-50 px-4 py-2 rounded-full border border-red-200">
+            <div className="flex flex-wrap gap-2">
+              <Link 
+                to={{
+                  pathname: "/violations-map",
+                  search: country && country !== 'EARTH' && country !== '' && country !== 'all' ? `?country=${country}` : ''
+                }}
+                className="px-4 py-2 rounded-full border border-red-200 hover:bg-red-100 transition-colors no-underline hover:no-underline"
+              >
                 <div className="flex items-center gap-2">
                   <CheckCircle className="w-4 h-4 text-red-600" />
                   <span className="text-red-800 font-semibold text-sm">
                     {filteredViolations.length} {t('violationsMap.verifiedCases') || 'Verified Cases'}
                   </span>
                 </div>
-              </div>
+              </Link>
+              
+              {/* View Users button in blue style next to violations count */}
+              <button
+                onClick={() => setShowUsersModal(true)}
+                className=" px-4 py-2 rounded-full border border-blue-200 hover:bg-blue-100 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <FaUsers className="w-4 h-4 text-blue-600" />
+                  <span className="text-blue-800 font-semibold text-sm">
+                    {currentUsers.length} {t('viewUsers') || 'Users'}
+                  </span>
+                </div>
+              </button>
             </div>
             
             {/* Country selection and geolocation button positioned on the right */}
@@ -442,16 +608,18 @@ function Country() {
                 <select
                   value={country}
                   onChange={(e) => {
-                    setCountry(e.target.value);
-                    setGeolocationAccepted(true);
-                    if (e.target.value) fetchCountryData(e.target.value);
+                    const selectedCountry = e.target.value;
+                    setCountry(selectedCountry);
+                    if (selectedCountry && selectedCountry !== 'all') {
+                      fetchCountryData(selectedCountry);
+                    }
                   }}
                   className="w-full md:w-48 px-4 py-2.5 rounded-full border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 appearance-none bg-white text-blue-950 text-sm shadow-sm"
                   aria-label={t('selectCountry')}
                 >
-                  <option value="">{t('selectCountry')}</option>
+                  <option value="EARTH">{t('planetEarth') || 'Planet Earth'}</option>
                   {countries.map(({ code, name }) => (
-                    <option key={code} value={code}>{name[i18n.language]}</option>
+                    <option key={code} value={code}>{name[i18n.language] || name.en}</option>
                   ))}
                 </select>
                 <ChevronDown className="w-4 h-4 text-gray-500 absolute right-3 top-3 pointer-events-none" />
@@ -460,7 +628,7 @@ function Country() {
               <button
                 onClick={handleGeolocation}
                 className="p-2 bg-blue-100 hover:bg-blue-200 rounded-full transition-colors"
-                disabled={isLoading}
+                disabled={geolocationLoading}
                 title={t('useGeolocation')}
               >
                 <FaMapMarkerAlt className="text-blue-600 w-5 h-5" />
@@ -474,10 +642,15 @@ function Country() {
               zoom={initialZoom}
               style={{ height: '100%', width: '100%' }}
               className="rounded-lg"
+              worldCopyJump={false}
+              maxBounds={[[-90, -180], [90, 180]]}
+              maxBoundsViscosity={1.0}
             >
               <TileLayer
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                noWrap={true}
+                bounds={[[-90, -180], [90, 180]]}
               />
 
               <MapController
@@ -485,6 +658,7 @@ function Country() {
                 userCountry={userCountry}
                 initialCenter={initialCenter}
                 initialZoom={initialZoom}
+                showAllCountries={country === 'EARTH' || country === '' || country === 'all'}
               />
 
               {filteredViolations.map((violation) => (
@@ -500,10 +674,6 @@ function Country() {
                           {violation.violation_action?.substring(0, 80)}
                           {violation.violation_action?.length > 80 ? '...' : ''}
                         </h3>
-                        <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs border ${getStatusBadge(violation.status).class}`}>
-                          {getStatusBadge(violation.status).icon}
-                          <span>{getStatusBadge(violation.status).text}</span>
-                        </div>
                       </div>
                       
                       <div className="space-y-2 text-xs text-gray-600">
@@ -519,14 +689,7 @@ function Country() {
                             )}
                           </div>
                         )}
-                        
-                        {violation.violation_address && (
-                          <div className="flex items-start gap-2">
-                            <MapPin className="w-3 h-3 text-gray-400 mt-0.5 flex-shrink-0" />
-                            <span className="leading-tight">{violation.violation_address}</span>
-                          </div>
-                        )}
-                        
+                                                                 
                         {violation.violator_name && (
                           <div className="flex items-center gap-2">
                             <User className="w-3 h-3 text-gray-400" />
@@ -554,16 +717,16 @@ function Country() {
               ))}
             </MapContainer>
           </div>
-          {error && (
+          {(error || geolocationError) && (
             <div className="mt-2 text-red-500 text-sm text-center">
-              {error}
+              {error || geolocationError}
             </div>
           )}
         </motion.div>
       )}
 
       {/* Freedom ratings */}
-      {country && (
+      {(country || country === 'EARTH' || country === '' || country === 'all') && (
         <>
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
@@ -571,7 +734,6 @@ function Country() {
             transition={{ duration: 0.5, delay: 0.2 }}
             className="bg-white/95 p-4 md:p-6 rounded-2xl shadow-lg border border-gray-100 backdrop-blur-sm"
           >
-            <h2 className="text-xl font-bold text-gray-900 mb-4">{t('freedomRatings')}</h2>
             {isLoadingData ? (
               <div className="text-center py-4">
                 <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500 mx-auto"></div>
@@ -583,12 +745,12 @@ function Country() {
                   <div key={key} className="relative group">
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-sm font-medium text-gray-900">{t(key)}</span>
-                      <span className="text-sm font-semibold text-blue-600">{freedomRatings[key]}/10</span>
+                      <span className="text-sm font-semibold text-blue-600">{currentFreedomRatings[key]}/10</span>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-3 mb-1">
+                    <div className="w-full bg-gray-200 rounded-full h-2 ">
                       <div
-                        className="bg-gradient-to-r from-blue-500 to-blue-600 h-3 rounded-full transition-all duration-300"
-                        style={{ width: `${(parseFloat(freedomRatings[key]) / 10) * 100}%` }}
+                        className="bg-gradient-to-r from-blue-500 to-blue-600 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${(parseFloat(currentFreedomRatings[key]) / 10) * 100}%` }}
                       ></div>
                     </div>
                     <div className="absolute left-0 top-full mt-1 hidden group-hover:block bg-white shadow-lg p-3 rounded-lg z-10 border border-gray-200 min-w-[200px]">
@@ -606,13 +768,26 @@ function Country() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.3 }}
-            className="bg-white/95 p-4 md:p-6 rounded-2xl shadow-lg border border-gray-100 backdrop-blur-sm"
+            
           >
-            <h2 className="text-xl font-bold text-gray-900 mb-4">{t('postsFromCountry', { country: countryName })}</h2>
-            <SocialFeed userId={null} countryCode={country} />
+            <h2 className="text-ls font-bold text-gray-900 mb-4">
+              {country === 'EARTH' || country === '' || country === 'all' 
+                ? (t('postsFromPlanetEarth') || 'Posts from Planet Earth')
+                : t('postsFromCountry', { country: countryName })
+              }
+            </h2>
+            <SocialFeed userId={null} countryCode={country === 'EARTH' || country === '' || country === 'all' ? null : country} />
           </motion.div>
         </>
       )}
+
+      {/* Country Users Modal */}
+      <CountryUsersModal
+        isOpen={showUsersModal}
+        onClose={() => setShowUsersModal(false)}
+        users={currentUsers}
+        countryName={countryName}
+      />
     </div>
   );
 
