@@ -23,9 +23,8 @@ function Sidebar({ currentUser }) {
   const [loading, setLoading] = useState(true);
 
   const navItems = [
-    { label: 'feed', path: '/feed', icon: <FaHome size={18} /> },
-    { label: 'profile', path: '/profile', icon: <FaUser size={18} /> },
     { label: 'country', path: '/country', icon: <FaGlobe size={18} /> },
+    { label: 'profile', path: '/profile', icon: <FaUser size={18} /> },
     { label: 'chat', path: '/chat', icon: <FaComments size={18} /> },
     { label: 'community', path: '/community', icon: <FaUsers size={18} /> },
     { label: 'services', path: '/services', icon: <FaBriefcase size={18} /> },
@@ -87,6 +86,11 @@ function Sidebar({ currentUser }) {
     }
   };
 
+  // Функція для переходу на сторінку профілю
+  const handleProfileClick = () => {
+    navigate('/profile');
+  };
+
   const isActive = (path) => location.pathname === path;
 
   const getCountryName = (countryCode) => {
@@ -124,12 +128,12 @@ function Sidebar({ currentUser }) {
             onClick={() => navigate(item.path)}
             className={`flex items-center text-left p-3 rounded-full transition-all duration-200${
               isActive(item.path)
-                ? 'bg-accent text-blue-950'
-                : 'text-blue-950 hover:bg-gray-100 hover:text-accent'
+                ? ' bg-gray-100 text-accent'
+                : ' text-blue-950 hover:bg-gray-100 hover:text-accent'
             }`}
           >
             <span className="mr-3">{item.icon}</span>
-            <span className="text-sm font-medium">{t(item.label)}</span>
+            <span className="text-base font-medium">{t(item.label)}</span>
           </button>
         ))}
         
@@ -147,18 +151,28 @@ function Sidebar({ currentUser }) {
         {currentUser && userProfile && (
           <div className="mt-4 pt-4 border-t border-gray-200">
             <div className="flex items-center space-x-3 mb-3">
-              {/* Аватарка */}
-              <img
-                src={userProfile.profile_picture || 'https://placehold.co/64x64'}
-                alt={t('profilePicture')}
-                className="w-12 h-12 rounded-full object-cover border-2 border-gray-200"
-              />
+              {/* Аватарка з можливістю переходу на профіль */}
+              <button
+                onClick={handleProfileClick}
+                className="flex-shrink-0 focus:outline-none hover:opacity-80 transition-opacity duration-200"
+              >
+                <img
+                  src={userProfile.profile_picture || 'https://placehold.co/64x64'}
+                  alt={t('profilePicture')}
+                  className="w-12 h-12 rounded-full object-cover border-2 border-gray-200"
+                />
+              </button>
               
               <div className="flex-1 min-w-0">
-                {/* Ім'я користувача */}
-                <h3 className="text-sm font-bold text-gray-900 truncate">
-                  {userProfile.username || currentUser.email || t('anonymous')}
-                </h3>
+                {/* Ім'я користувача з можливістю переходу на профіль */}
+                <button
+                  onClick={handleProfileClick}
+                  className="text-left focus:outline-none hover:text-accent transition-colors duration-200 w-full"
+                >
+                  <h3 className="text-sm font-bold text-gray-900 truncate">
+                    {userProfile.username || currentUser.email || t('anonymous')}
+                  </h3>
+                </button>
                 
                 {/* Вид діяльності */}
                 <p className="text-xs text-blue-600 font-medium truncate">
@@ -166,7 +180,7 @@ function Sidebar({ currentUser }) {
                 </p>
                 
                 {/* Країна */}
-                <p className="text-xs text-gray-600 truncate">
+                <p className="text-sm text-gray-600 truncate">
                   {userProfile.country ? getCountryName(userProfile.country) : t('unknown')}
                 </p>
               </div>
