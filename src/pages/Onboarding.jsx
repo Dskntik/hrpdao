@@ -20,10 +20,25 @@ import {
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Shield, Book, AlertTriangle, Check, Link, ArrowRight, ArrowLeft, Users, MapPin, Calendar } from "lucide-react";
+import { supabase } from '../utils/supabase';
+import { useOnboarding } from '../hooks/useOnboarding';
+import { useLanguage } from '../hooks/useLanguage';
 
 function Onboarding() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  
+  // Use language hook
+  const {
+    currentLanguage,
+    showLanguageDropdown,
+    changeLanguage,
+    toggleLanguageDropdown,
+    closeLanguageDropdown,
+    getLanguageName,
+    availableLanguages
+  } = useLanguage();
+
   const [currentStep, setCurrentStep] = useState(0);
   const [testAnswers, setTestAnswers] = useState([]);
   const [testCompleted, setTestCompleted] = useState(false);
@@ -32,6 +47,9 @@ function Onboarding() {
   });
   const [linkClicked, setLinkClicked] = useState(false);
   const [progress, setProgress] = useState(0);
+
+  // Use onboarding hook
+  const { awardOnboardingPoints } = useOnboarding();
 
   useEffect(() => {
     const newProgress = (currentStep / (educationContent.length + 1)) * 100;
@@ -229,14 +247,31 @@ function Onboarding() {
     return correctAnswers === testQuestions.length;
   };
 
-  const handleTestSubmit = () => {
+  const handleTestSubmit = async () => {
     const passed = calculateResult();
     setTestCompleted(true);
 
     if (passed) {
-      setTimeout(() => {
-        navigate("/feed");
-      }, 3000);
+      try {
+        // Отримуємо поточного користувача
+        const { data: { user } } = await supabase.auth.getUser();
+        const userId = user?.id;
+        
+        if (userId) {
+          // Оновлюємо статус онбордингу
+          await awardOnboardingPoints(userId);
+        }
+        
+        setTimeout(() => {
+          navigate("/country");
+        }, 3000);
+      } catch (error) {
+        console.error('Error updating onboarding status:', error);
+        // Все одно перенаправляємо користувача навіть якщо сталася помилка
+        setTimeout(() => {
+          navigate("/country");
+        }, 3000);
+      }
     }
   };
 
@@ -249,20 +284,23 @@ function Onboarding() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="min-h-screen bg-gray-50 py-8"
+        className="min-h-screen bg-gray-50 py-4 px-3"
       >
-        <div className="max-w-4xl mx-auto px-4">
-          <div className="bg-white/95 rounded-2xl shadow-lg p-8 text-center border border-blue-100 backdrop-blur-sm">
+        <div className="max-w-4xl mx-auto">
+          <div className="bg-white/95 rounded-2xl shadow-lg p-6 text-center border border-blue-100 backdrop-blur-sm">
             {passed ? (
               <>
-                <div className="mb-6">
-                  <Check className="text-green-500 w-16 h-16 mx-auto" />
+                <div className="mb-4">
+                  <Check className="text-green-500 w-14 h-14 mx-auto" />
                 </div>
-                <h2 className="text-3xl font-bold text-green-600 mb-6">
+                <h2 className="text-2xl font-bold text-green-600 mb-4">
                   Congratulations on Your Success!
                 </h2>
-                <p className="text-lg text-gray-700 mb-6">
-                  You have successfully passed all challenges! You will now be redirected to the main DAO page...
+                <p className="text-lg text-gray-700 mb-4">
+                  You have successfully passed all challenges!
+                </p>
+                <p className="text-lg text-gray-700 mb-4">
+                  You will now be redirected to the main DAO page...
                 </p>
                 <div className="animate-pulse text-blue-500">
                   <div className="flex justify-center space-x-2">
@@ -280,11 +318,11 @@ function Onboarding() {
               </>
             ) : (
               <>
-                <AlertTriangle className="text-red-500 w-16 h-16 mx-auto mb-6" />
-                <h2 className="text-3xl font-bold text-red-600 mb-6">
+                <AlertTriangle className="text-red-500 w-14 h-14 mx-auto mb-4" />
+                <h2 className="text-2xl font-bold text-red-600 mb-4">
                   Needs a Bit More Practice
                 </h2>
-                <p className="text-lg text-gray-700 mb-6">
+                <p className="text-lg text-gray-700 mb-4">
                   But don't be discouraged! Every attempt makes you a stronger human rights defender.
                 </p>
                 <button
@@ -293,7 +331,7 @@ function Onboarding() {
                     setTestAnswers([]);
                     setCurrentStep(0);
                   }}
-                  className="bg-gradient-to-r from-blue-600 to-blue-500 text-white px-8 py-4 rounded-full hover:from-blue-700 hover:to-blue-600 transition-all transform hover:scale-105 text-lg font-bold shadow-md"
+                  className="bg-gradient-to-r from-blue-600 to-blue-500 text-white px-6 py-3 rounded-full hover:from-blue-700 hover:to-blue-600 transition-all transform hover:scale-105 text-lg font-bold shadow-md"
                 >
                   Try Again
                 </button>
@@ -310,26 +348,84 @@ function Onboarding() {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
-      className="min-h-screen bg-gray-50 py-8"
+      className="min-h-screen bg-gray-50 py-4 px-3"
     >
-      <div className="max-w-6xl mx-auto px-4">
+      <div className="max-w-6xl mx-auto">
+        {/* Language selection button */}
+        <div className="flex justify-end mb-4">
+          <div className="relative">
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={toggleLanguageDropdown}
+              className="flex items-center gap-2 px-3 py-2 rounded-full bg-white/95 backdrop-blur-sm border border-blue-100 text-blue-950 shadow-sm hover:shadow-md transition-all duration-200 text-xs"
+              aria-label={t("selectLanguage")}
+            >
+              <span className="font-medium">
+                {getLanguageName(currentLanguage)}
+              </span>
+              <svg
+                className={`w-3 h-3 transition-transform ${
+                  showLanguageDropdown ? "rotate-180" : ""
+                }`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 9l-7 7-7-7"
+                />
+              </svg>
+            </motion.button>
+
+            <AnimatePresence>
+              {showLanguageDropdown && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="absolute top-full right-0 mt-2 w-48 bg-white/95 rounded-2xl shadow-lg border border-blue-100 overflow-hidden z-10 backdrop-blur-sm"
+                >
+                  {availableLanguages.map((language) => (
+                    <button
+                      key={language.code}
+                      onClick={() => changeLanguage(language.code)}
+                      className="w-full px-3 py-2 text-left text-xs hover:bg-blue-50 transition-colors flex items-center gap-2"
+                    >
+                      <span
+                        className={`w-2 h-2 rounded-full ${
+                          currentLanguage === language.code ? "bg-blue-600" : "bg-gray-300"
+                        }`}
+                      ></span>
+                      {language.name}
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+
         {/* Progress Bar */}
         {currentStep > 0 && (
-          <div className="mb-8">
-            <div className="flex justify-between text-sm text-gray-600 mb-2">
+          <div className="mb-6">
+            <div className="flex justify-between text-xs text-gray-600 mb-1">
               <span>Onboarding Progress</span>
               <span>{Math.round(progress)}%</span>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
+            <div className="w-full bg-gray-200 rounded-full h-1.5">
               <div
-                className="bg-gradient-to-r from-blue-600 to-blue-500 h-2 rounded-full transition-all duration-500"
+                className="bg-gradient-to-r from-blue-600 to-blue-500 h-1.5 rounded-full transition-all duration-500"
                 style={{ width: `${progress}%` }}
               ></div>
             </div>
           </div>
         )}
 
-        <div className="bg-white/95 rounded-2xl shadow-lg p-8 border border-blue-100 backdrop-blur-sm">
+        <div className="bg-white/95 rounded-2xl shadow-lg p-4 border border-blue-100 backdrop-blur-sm">
           {/* Welcome Section */}
           {currentStep === 0 && (
             <motion.div
@@ -337,25 +433,25 @@ function Onboarding() {
               animate={{ opacity: 1, y: 0 }}
               className="text-center"
             >
-              <div className="mb-6">
-                <Shield className="text-blue-600 w-20 h-20 mx-auto" />
+              <div className="mb-4">
+                <Shield className="text-blue-600 w-16 h-16 mx-auto" />
               </div>
-              <h1 className="text-4xl font-bold text-blue-950 mb-6">
+              <h1 className="text-2xl font-bold text-blue-950 mb-4 leading-tight">
                 {welcomeMessage.title}
               </h1>
-              <p className="text-lg text-gray-700 mb-8 max-w-2xl mx-auto leading-relaxed">
+              <p className="text-sm text-gray-700 mb-6 mx-auto leading-relaxed">
                 {welcomeMessage.text}
               </p>
 
               {/* Policy Link Card */}
-              <div className="bg-white border border-gray-200 rounded-2xl p-6 mb-8 text-left max-w-2xl mx-auto shadow-sm">
+              <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-6 text-left mx-auto shadow-sm">
                 <div className="flex items-start">
-                  <Book className="text-blue-600 w-6 h-6 mt-1 mr-4 flex-shrink-0" />
+                  <Book className="text-blue-600 w-5 h-5 mt-0.5 mr-3 flex-shrink-0" />
                   <div>
-                    <p className="font-bold text-blue-950 text-lg mb-2">
+                    <p className="font-bold text-blue-950 text-sm mb-1">
                       Mandatory Task:
                     </p>
-                    <p className="text-gray-700 mb-4">
+                    <p className="text-xs text-gray-700 mb-3 leading-relaxed">
                       Carefully review the document{" "}
                       <a
                         href="https://ipfs.io/ipfs/QmRXQP1s6rVaiXxrr6jY6Y7EfK1CYvyc82F99siunckoQr/"
@@ -364,21 +460,21 @@ function Onboarding() {
                         className="underline font-bold hover:text-blue-600 transition-colors inline-flex items-center"
                         onClick={() => setLinkClicked(true)}
                       >
-                        Human Rights Policy <Link className="ml-1 w-4 h-4" />
+                        Human Rights Policy <Link className="ml-1 w-3 h-3" />
                       </a>{" "}
                       before continuing!
                     </p>
-                    <div className="flex items-center space-x-2 text-blue-600">
+                    <div className="flex items-center space-x-1 text-blue-600">
                       <Check
                         className={
-                          linkClicked ? "text-green-500 w-4 h-4" : "text-gray-300 w-4 h-4"
+                          linkClicked ? "text-green-500 w-3 h-3" : "text-gray-300 w-3 h-3"
                         }
                       />
                       <span
                         className={
                           linkClicked
-                            ? "text-green-600 font-semibold text-sm"
-                            : "text-gray-500 text-sm"
+                            ? "text-green-600 font-semibold text-xs"
+                            : "text-gray-500 text-xs"
                         }
                       >
                         {linkClicked
@@ -391,13 +487,13 @@ function Onboarding() {
               </div>
 
               {/* Agreements */}
-              <div className="bg-white border border-gray-200 rounded-2xl p-6 mb-8 max-w-2xl mx-auto shadow-sm">
-                <h3 className="text-lg font-semibold text-blue-950 mb-4">
+              <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-6 mx-auto shadow-sm">
+                <h3 className="text-sm font-semibold text-blue-950 mb-3">
                   Required Agreements:
                 </h3>
-                <label className="flex items-start space-x-3 cursor-pointer group">
+                <label className="flex items-start space-x-2 cursor-pointer group">
                   <div
-                    className={`mt-1 w-6 h-6 rounded border-2 flex items-center justify-center transition-all ${
+                    className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
                       agreements.all
                         ? "bg-green-500 border-green-500"
                         : "border-gray-300 group-hover:border-blue-400"
@@ -413,12 +509,8 @@ function Onboarding() {
                     onChange={handleAgreementChange}
                     className="hidden"
                   />
-                  <span className="text-gray-700 group-hover:text-gray-900 text-sm">
-                    I accept the terms of the <strong>Human Rights Policy</strong>,{" "}
-                    <strong>Privacy Policy</strong> and{" "}
-                    <strong>Terms of Use</strong> of the DAO platform. 
-                    I commit to adhering to human rights principles, 
-                    community rules and agree to the processing of personal data.
+                  <span className="text-xs text-gray-700 group-hover:text-gray-900 leading-relaxed">
+                    I accept the terms of the <strong>Human Rights Policy</strong> and commit to adhering to human rights principles and community rules.
                   </span>
                 </label>
               </div>
@@ -426,15 +518,15 @@ function Onboarding() {
               <button
                 onClick={() => setCurrentStep(1)}
                 disabled={!canStartLearning}
-                className={`px-12 py-4 rounded-full text-lg font-bold transition-all transform ${
+                className={`w-full px-6 py-3 rounded-full text-lg font-bold transition-all transform ${
                   canStartLearning
                     ? "bg-gradient-to-r from-blue-600 to-blue-500 text-white hover:from-blue-700 hover:to-blue-600 hover:scale-105 shadow-md"
                     : "bg-gray-300 text-gray-500 cursor-not-allowed"
                 }`}
               >
                 {canStartLearning ? (
-                  <span className="flex items-center">
-                    Start Learning <ArrowRight className="ml-2 w-5 h-5" />
+                  <span className="flex items-center justify-center">
+                    Start Learning <ArrowRight className="ml-2 w-4 h-4" />
                   </span>
                 ) : (
                   "Complete requirements to start"
@@ -448,19 +540,19 @@ function Onboarding() {
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="max-w-4xl mx-auto"
+              className="mx-auto"
             >
-              <div className="flex items-center gap-4 mb-8">
-                <div className="p-3 bg-gradient-to-r from-blue-600 to-blue-500 rounded-2xl">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-2 bg-gradient-to-r from-blue-600 to-blue-500 rounded-xl">
                   {React.createElement(educationContent[currentStep - 1].icon, {
-                    className: "text-white w-6 h-6",
+                    className: "text-white w-5 h-5",
                   })}
                 </div>
                 <div>
-                  <h1 className="text-2xl font-bold text-blue-950">
+                  <h1 className="text-lg font-bold text-blue-950 leading-tight">
                     {educationContent[currentStep - 1].title}
                   </h1>
-                  <div className="flex items-center space-x-2 text-sm text-gray-500 mt-1">
+                  <div className="flex items-center space-x-1 text-xs text-gray-500 mt-0.5">
                     <span>
                       Step {currentStep} of {educationContent.length}
                     </span>
@@ -470,36 +562,36 @@ function Onboarding() {
                 </div>
               </div>
 
-              <div className="prose max-w-none mb-8">
-                <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
-                  <p className="text-gray-700 text-lg leading-relaxed whitespace-pre-line">
+              <div className="prose max-w-none mb-6">
+                <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
+                  <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-line">
                     {educationContent[currentStep - 1].content}
                   </p>
                 </div>
               </div>
 
-              <div className="flex justify-between items-center mt-8">
+              <div className="flex justify-between items-center mt-6">
                 <button
                   onClick={() => setCurrentStep(currentStep - 1)}
                   disabled={currentStep === 1}
-                  className={`flex items-center px-6 py-3 rounded-full transition-all ${
+                  className={`flex items-center px-4 py-2 rounded-full transition-all text-sm ${
                     currentStep === 1
                       ? "bg-gray-200 text-gray-400 cursor-not-allowed"
                       : "bg-gray-500 text-white hover:bg-gray-600 transform hover:scale-105"
                   }`}
                 >
-                  <ArrowLeft className="mr-2 w-4 h-4" />
+                  <ArrowLeft className="mr-1 w-3 h-3" />
                   Back
                 </button>
 
                 <button
                   onClick={() => setCurrentStep(currentStep + 1)}
-                  className="flex items-center bg-gradient-to-r from-blue-600 to-blue-500 text-white px-8 py-3 rounded-full hover:from-blue-700 hover:to-blue-600 transform hover:scale-105 transition-all font-semibold"
+                  className="flex items-center bg-gradient-to-r from-blue-600 to-blue-500 text-white px-5 py-2 rounded-full hover:from-blue-700 hover:to-blue-600 transform hover:scale-105 transition-all font-semibold text-sm"
                 >
                   {currentStep === educationContent.length
                     ? "Go to Test"
                     : "Next Lesson"}
-                  <ArrowRight className="ml-2 w-4 h-4" />
+                  <ArrowRight className="ml-1 w-3 h-3" />
                 </button>
               </div>
             </motion.div>
@@ -510,53 +602,53 @@ function Onboarding() {
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="max-w-4xl mx-auto"
+              className="mx-auto"
             >
-              <div className="flex items-center gap-4 mb-8">
-                <div className="p-3 bg-gradient-to-r from-green-600 to-green-500 rounded-2xl">
-                  <Shield className="text-white w-6 h-6" />
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-2 bg-gradient-to-r from-green-600 to-green-500 rounded-xl">
+                  <Shield className="text-white w-5 h-5" />
                 </div>
                 <div>
-                  <h1 className="text-2xl font-bold text-blue-950">
+                  <h1 className="text-lg font-bold text-blue-950 leading-tight">
                     Final Test: Knowledge Check
                   </h1>
-                  <p className="text-gray-600 mt-2">
+                  <p className="text-xs text-gray-600 mt-1 leading-relaxed">
                     Answer carefully - you need to answer all questions correctly to succeed!
                   </p>
                 </div>
               </div>
 
-              <div className="space-y-6">
+              <div className="space-y-4">
                 {testQuestions.map((question, questionIndex) => (
                   <div
                     key={questionIndex}
-                    className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm hover:border-blue-200 transition-all"
+                    className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm hover:border-blue-200 transition-all"
                   >
-                    <h3 className="text-lg font-semibold text-blue-950 mb-4 flex items-start">
-                      <span className="bg-blue-600 text-white rounded-full w-8 h-8 flex items-center justify-center text-sm mr-3 flex-shrink-0">
+                    <h3 className="text-sm font-semibold text-blue-950 mb-3 flex items-start">
+                      <span className="bg-blue-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs mr-2 flex-shrink-0 mt-0.5">
                         {questionIndex + 1}
                       </span>
                       {question.question}
                     </h3>
-                    <div className="grid gap-3 ml-11">
+                    <div className="grid gap-2 ml-8">
                       {question.options.map((option, optionIndex) => (
                         <label
                           key={optionIndex}
-                          className={`flex items-center space-x-4 p-4 rounded-xl cursor-pointer transition-all ${
+                          className={`flex items-center space-x-3 p-3 rounded-xl cursor-pointer transition-all text-sm ${
                             testAnswers[questionIndex] === optionIndex
                               ? "bg-blue-50 border-2 border-blue-300"
                               : "bg-white border-2 border-gray-200 hover:border-blue-200"
                           }`}
                         >
                           <div
-                            className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
+                            className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all flex-shrink-0 ${
                               testAnswers[questionIndex] === optionIndex
                                 ? "border-blue-600 bg-blue-600"
                                 : "border-gray-400"
                             }`}
                           >
                             {testAnswers[questionIndex] === optionIndex && (
-                              <div className="w-2 h-2 bg-white rounded-full"></div>
+                              <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
                             )}
                           </div>
                           <input
@@ -569,7 +661,7 @@ function Onboarding() {
                             }
                             className="hidden"
                           />
-                          <span className="text-gray-700 flex-1">{option}</span>
+                          <span className="text-gray-700 flex-1 text-xs leading-relaxed">{option}</span>
                         </label>
                       ))}
                     </div>
@@ -577,19 +669,19 @@ function Onboarding() {
                 ))}
               </div>
 
-              <div className="mt-12 text-center">
+              <div className="mt-8 text-center">
                 <button
                   onClick={handleTestSubmit}
                   disabled={testAnswers.length !== testQuestions.length}
-                  className={`px-12 py-4 rounded-full text-lg font-bold transition-all transform ${
+                  className={`w-full px-6 py-3 rounded-full text-lg font-bold transition-all transform ${
                     testAnswers.length === testQuestions.length
                       ? "bg-gradient-to-r from-green-600 to-green-500 text-white hover:from-green-700 hover:to-green-600 hover:scale-105 shadow-md"
                       : "bg-gray-300 text-gray-500 cursor-not-allowed"
                   }`}
                 >
-                  Complete Test and Get Results
+                  Complete Test
                 </button>
-                <p className="text-sm text-gray-500 mt-4">
+                <p className="text-xs text-gray-500 mt-2">
                   {testAnswers.length}/{testQuestions.length} questions answered
                 </p>
               </div>
