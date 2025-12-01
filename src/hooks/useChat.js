@@ -79,7 +79,7 @@ export const useChat = (currentUser, selectedChatId) => {
 
       const { data: chatData, error: chatError } = await supabase
         .from('chats')
-        .select('id, is_group, created_at, group_name, group_description, created_by, group_avatar_url')
+        .select('id, is_group, created_at, group_name, group_description, created_by, group_avatar_url, message_status')
         .in('id', chatIds);
 
       if (chatError) throw chatError;
@@ -103,6 +103,7 @@ export const useChat = (currentUser, selectedChatId) => {
               created_by: chat.created_by,
               member_count: members?.length || 0,
               created_at: chat.created_at,
+              message_status: chat.message_status,
             };
           } else {
             const { data: members, error: membersError } = await supabase
@@ -121,6 +122,7 @@ export const useChat = (currentUser, selectedChatId) => {
               otherUserProfilePicture: otherUser ? otherUser.users.profile_picture : null,
               otherUserId: otherUser ? otherUser.user_id : null,
               created_at: chat.created_at,
+              message_status: chat.message_status,
             };
           }
         })
@@ -218,12 +220,66 @@ export const useChat = (currentUser, selectedChatId) => {
     }
   }, [currentUser, t]);
 
+  // Check if user can send message in this chat
+  const canSendMessage = async (chatId, userId) => {
+    try {
+      // Get chat status
+      const { data: chat, error: chatError } = await supabase
+        .from('chats')
+        .select('message_status')
+        .eq('id', chatId)
+        .single();
+
+      if (chatError) throw chatError;
+
+      // If chat is active, user can send unlimited messages
+      if (chat.message_status === 'active') {
+        return { canSend: true };
+      }
+
+      // If chat is pending, check if user has already sent a message
+      const { data: existingMessages, error: messagesError } = await supabase
+        .from('messages')
+        .select('id')
+        .eq('chat_id', chatId)
+        .eq('user_id', userId);
+
+      if (messagesError) throw messagesError;
+
+      // User can send message only if they haven't sent any yet
+      const canSend = existingMessages.length === 0;
+      
+      return { 
+        canSend, 
+        reason: canSend ? null : 'waitForReply'
+      };
+    } catch (error) {
+      console.error('Error checking message permissions:', error);
+      return { canSend: false, reason: 'error' };
+    }
+  };
+
   // Handle sending a new message or updating an existing one
   const handleSendMessage = async (messageText, file, editingMessageId) => {
     if (!currentUser || !selectedChatId) return;
 
     try {
       setError(null);
+
+      // Check if user can send message (only for new messages, not edits)
+      if (!editingMessageId) {
+        const { canSend, reason } = await canSendMessage(selectedChatId, currentUser.id);
+        
+        if (!canSend) {
+          if (reason === 'waitForReply') {
+            toast.error(t('waitForReply') || 'Зачекайте на відповідь перед відправкою наступного повідомлення');
+          } else {
+            toast.error(t('errorSendingMessage') || 'Помилка перевірки дозволів');
+          }
+          return { success: false };
+        }
+      }
+
       let fileUrl = null;
 
       if (editingMessageId) {
@@ -494,7 +550,7 @@ export const useChat = (currentUser, selectedChatId) => {
         async (payload) => {
           const { data: chatData, error: chatError } = await supabase
             .from('chats')
-            .select('id, is_group, created_at, group_name, group_description, created_by, group_avatar_url')
+            .select('id, is_group, created_at, group_name, group_description, created_by, group_avatar_url, message_status')
             .eq('id', payload.new.chat_id)
             .single();
 
@@ -517,6 +573,7 @@ export const useChat = (currentUser, selectedChatId) => {
               created_by: chatData.created_by,
               member_count: members?.length || 0,
               created_at: chatData.created_at,
+              message_status: chatData.message_status,
             };
 
             setChats(prev => {
@@ -541,6 +598,7 @@ export const useChat = (currentUser, selectedChatId) => {
               otherUserProfilePicture: members.length > 0 ? members[0].users.profile_picture : null,
               otherUserId: members.length > 0 ? members[0].user_id : null,
               created_at: chatData.created_at,
+              message_status: chatData.message_status,
             };
 
             setChats(prev => {
