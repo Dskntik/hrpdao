@@ -1,21 +1,48 @@
-import React, { useState } from 'react';
+// CreatePostPage.jsx
+import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../utils/supabase';
-import { FaPaperclip, FaArrowLeft } from 'react-icons/fa';
-import { ChevronDown } from 'lucide-react';
+import { FaPaperclip, FaArrowLeft, FaTimes } from 'react-icons/fa';
 import countries from '../utils/countries';
+import { createPortal } from 'react-dom';
 
-function CreatePostPage({ currentUser }) {
+function CreatePostPage({ currentUser, isModal = false, onClose }) {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   
   const [newPostContent, setNewPostContent] = useState('');
   const [newPostMedia, setNewPostMedia] = useState(null);
   const [mediaPreview, setMediaPreview] = useState(null);
-  const [selectedCountry, setSelectedCountry] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [userCountry, setUserCountry] = useState(null);
+
+  // Завантажуємо країну користувача
+  useEffect(() => {
+    const fetchUserData = async () => {
+      if (!currentUser) return;
+      
+      try {
+        // Завантажуємо країну
+        const { data: profileData, error: profileError } = await supabase
+          .from('users')
+          .select('country')
+          .eq('id', currentUser.id)
+          .single();
+
+        if (profileError) throw profileError;
+
+        setUserCountry(profileData?.country || null);
+        
+      } catch (err) {
+        console.error('Помилка завантаження даних користувача:', err);
+        setUserCountry(null);
+      }
+    };
+
+    fetchUserData();
+  }, [currentUser]);
 
   const handleCreatePost = async () => {
     if (!currentUser) {
@@ -23,7 +50,7 @@ function CreatePostPage({ currentUser }) {
       navigate('/');
       return;
     }
-    
+
     if (!newPostContent && !newPostMedia) {
       setError(t('emptyPost') || 'Пост не може бути порожнім');
       return;
@@ -31,6 +58,7 @@ function CreatePostPage({ currentUser }) {
 
     try {
       setLoading(true);
+
       let mediaUrl = null;
       let mediaType = 'text';
       
@@ -54,7 +82,7 @@ function CreatePostPage({ currentUser }) {
         content: newPostContent,
         media_url: mediaUrl,
         media_type: mediaType,
-        country_code: selectedCountry || null,
+        country_code: userCountry,
       }).select(`
         *,
         users(id, username, profile_picture, country),
@@ -63,19 +91,20 @@ function CreatePostPage({ currentUser }) {
       `).single();
 
       if (error) throw error;
+    
+      // Очистка форми
+      setNewPostContent('');
+      setNewPostMedia(null);
+      setMediaPreview(null);
+      setError(null);
 
-      const hashtags = newPostContent.match(/#[^\s#]+/g) || [];
-      if (hashtags.length > 0) {
-        const hashtagInserts = hashtags.map(tag => ({
-          post_id: data.id,
-          tag: tag.slice(1).toLowerCase(),
-        }));
-        const { error: hashtagError } = await supabase.from('post_hashtags').insert(hashtagInserts);
-        if (hashtagError) throw hashtagError;
+      // Закриття модалки або навігація
+      if (isModal && onClose) {
+        onClose();
+        window.location.reload();
+      } else {
+        navigate(-1);
       }
-
-      // Повертаємося на попередню сторінку після успішного створення
-      navigate(-1);
       
     } catch (err) {
       console.error('Помилка створення поста:', err);
@@ -110,6 +139,110 @@ function CreatePostPage({ currentUser }) {
     setMediaPreview(null);
   };
 
+  const handleClose = () => {
+    if (isModal && onClose) {
+      onClose();
+    } else {
+      navigate(-1);
+    }
+  };
+
+  // Модальна версія
+  if (isModal) {
+    return createPortal(
+      <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+          <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+            <h2 className="text-lg font-semibold text-gray-900">{t('createPost')}</h2>
+            <button
+              onClick={handleClose}
+              className="p-2 rounded-full hover:bg-gray-100 text-gray-600"
+            >
+              <FaTimes className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="p-4">
+            {error && (
+              <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-lg">
+                {error}
+              </div>
+            )}
+
+            <div className="mb-4">
+              <textarea
+                value={newPostContent}
+                onChange={(e) => setNewPostContent(e.target.value)}
+                placeholder={t('whatsOnYourMind')}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none min-h-[120px]"
+                rows="4"
+              />
+            </div>
+
+            {mediaPreview && (
+              <div className="mb-4 relative">
+                {newPostMedia?.type?.startsWith('image/') ? (
+                  <img
+                    src={mediaPreview}
+                    alt="Preview"
+                    className="w-full h-auto rounded-lg max-h-60 object-contain"
+                  />
+                ) : newPostMedia?.type?.startsWith('video/') ? (
+                  <video
+                    src={mediaPreview}
+                    controls
+                    className="w-full h-auto rounded-lg max-h-60 object-contain"
+                  />
+                ) : null}
+                <button
+                  onClick={clearMedia}
+                  className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition-colors"
+                >
+                  <FaTimes className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-2">
+                <label className="cursor-pointer p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors">
+                  <FaPaperclip className="w-5 h-5 text-gray-600" />
+                  <input
+                    type="file"
+                    accept="image/*,video/*,.pdf"
+                    onChange={handleMediaChange}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <button
+              onClick={handleCreatePost}
+              disabled={loading || (!newPostContent && !newPostMedia)}
+              className={`w-full px-4 py-3 rounded-full font-semibold text-white transition-all duration-300 flex items-center justify-center gap-2 text-sm shadow-md hover:shadow-xl ${
+                loading || (!newPostContent && !newPostMedia)
+                  ? 'bg-gray-400 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-blue-900 via-blue-800 to-blue-700 hover:from-blue-950 hover:via-blue-900 hover:to-blue-800'
+              }`}
+            >
+              {loading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  {t('publishing')}
+                </>
+              ) : (
+                t('publish')
+              )}
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    );
+  }
+
+  // Сторінкова версія
   return (
     <div className="min-h-screen bg-gradient-to-br from-white to-gray-100">
       {/* Header */}
@@ -117,7 +250,7 @@ function CreatePostPage({ currentUser }) {
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <button
-              onClick={() => navigate(-1)}
+              onClick={handleClose}
               className="p-2 rounded-full hover:bg-gray-100 text-gray-600"
             >
               <FaArrowLeft className="w-5 h-5" />
@@ -134,20 +267,7 @@ function CreatePostPage({ currentUser }) {
             {error}
           </div>
         )}
-
-        {/* User Info */}
-        <div className="flex items-center space-x-3 mb-6 p-4 bg-white rounded-lg shadow-sm">
-          <img
-            src={currentUser?.profile_picture || '/default-avatar.png'}
-            alt={currentUser?.username}
-            className="w-10 h-10 rounded-full object-cover"
-          />
-          <div>
-            <p className="font-semibold text-gray-900">{currentUser?.username}</p>
-            <p className="text-sm text-gray-500">{t('createPost')}</p>
-          </div>
-        </div>
-
+      
         {/* Content Area */}
         <div className="bg-white rounded-lg shadow-sm p-6 mb-4">
           <textarea
@@ -183,7 +303,7 @@ function CreatePostPage({ currentUser }) {
             </div>
           )}
 
-          {/* Attachment and Country Selection */}
+          {/* Attachment */}
           <div className="flex items-center justify-between mt-6 pt-4 border-t border-gray-200">
             <div className="flex items-center space-x-4">
               <label className="cursor-pointer flex items-center space-x-2 p-3 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors">
@@ -196,23 +316,6 @@ function CreatePostPage({ currentUser }) {
                   className="hidden"
                 />
               </label>
-            </div>
-
-            <div className="relative">
-              <select
-                value={selectedCountry}
-                onChange={(e) => setSelectedCountry(e.target.value)}
-                className="w-48 px-4 py-2.5 rounded-full border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 appearance-none bg-white text-gray-900 text-sm shadow-sm"
-                aria-label={t('complaint.country') || 'Країна'}
-              >
-                <option value="">{t('selectCountry') || 'Виберіть країну'}</option>
-                {countries.map((country) => (
-                  <option key={country.code} value={country.code}>
-                    {country.name[i18n.language] || country.name.en}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="w-4 h-4 text-gray-500 absolute right-3 top-3 pointer-events-none" />
             </div>
           </div>
         </div>
@@ -236,13 +339,6 @@ function CreatePostPage({ currentUser }) {
             t('publish') || 'Опублікувати'
           )}
         </button>
-
-        {/* Help Text */}
-        <div className="mt-4 text-center">
-          <p className="text-sm text-gray-500">
-            {t('createPostHelp') || 'Додайте текст, фото, відео або документ для вашого посту'}
-          </p>
-        </div>
       </div>
     </div>
   );
