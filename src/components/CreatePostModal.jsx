@@ -1,8 +1,8 @@
-import React from 'react';
+// CreatePostModal.jsx
+import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { supabase } from '../utils/supabase';
 import { FaTimes, FaPaperclip } from 'react-icons/fa';
-import { ChevronDown } from 'lucide-react';
 import countries from '../utils/countries';
 import { createPortal } from 'react-dom';
 
@@ -15,8 +15,6 @@ function CreatePostModal({
   setNewPostMedia,
   mediaPreview,
   setMediaPreview,
-  selectedCountry,
-  setSelectedCountry,
   error,
   setError,
   loading,
@@ -25,6 +23,36 @@ function CreatePostModal({
   navigate,
 }) {
   const { t, i18n } = useTranslation();
+  
+  const [userCountry, setUserCountry] = useState(null);
+
+  // Завантажуємо країну користувача
+  useEffect(() => {
+    const fetchUserData = async () => {
+      if (!currentUser) return;
+      
+      try {
+        // Завантажуємо країну
+        const { data: profileData, error: profileError } = await supabase
+          .from('users')
+          .select('country')
+          .eq('id', currentUser.id)
+          .single();
+
+        if (profileError) throw profileError;
+
+        setUserCountry(profileData?.country || null);
+        
+      } catch (err) {
+        console.error('Помилка завантаження даних користувача:', err);
+        setUserCountry(null);
+      }
+    };
+
+    if (showCreateModal) {
+      fetchUserData();
+    }
+  }, [currentUser, showCreateModal]);
 
   const handleCreatePost = async () => {
     if (!currentUser) {
@@ -32,12 +60,15 @@ function CreatePostModal({
       navigate('/');
       return;
     }
+
     if (!newPostContent && !newPostMedia) {
       setError(t('emptyPost') || 'Пост не може бути порожнім');
       return;
     }
+
     try {
       setLoading(true);
+
       let mediaUrl = null;
       let mediaType = 'text';
       if (newPostMedia) {
@@ -59,7 +90,7 @@ function CreatePostModal({
         content: newPostContent,
         media_url: mediaUrl,
         media_type: mediaType,
-        country_code: selectedCountry || null,
+        country_code: userCountry,
       }).select(`
         *,
         users(id, username, profile_picture, country),
@@ -69,16 +100,7 @@ function CreatePostModal({
 
       if (error) throw error;
 
-      const hashtags = newPostContent.match(/#[^\s#]+/g) || [];
-      if (hashtags.length > 0) {
-        const hashtagInserts = hashtags.map(tag => ({
-          post_id: data.id,
-          tag: tag.slice(1).toLowerCase(),
-        }));
-        const { error: hashtagError } = await supabase.from('post_hashtags').insert(hashtagInserts);
-        if (hashtagError) throw hashtagError;
-      }
-
+      
       setNewPostContent('');
       setNewPostMedia(null);
       setMediaPreview(null);
@@ -145,6 +167,16 @@ function CreatePostModal({
             </div>
           )}
 
+          {/* Відображення країни користувача */}
+          {userCountry && (
+            <div className="mb-3 p-2 bg-green-50 rounded-lg text-sm text-green-700">
+              {t('postWillBePublishedIn') || 'Пост буде опубліковано в'}:
+              <span className="font-semibold ml-1">
+                {countries.find(c => c.code === userCountry)?.name[i18n.language] || userCountry}
+              </span>
+            </div>
+          )}
+
           <div className="mb-4">
             <textarea
               value={newPostContent}
@@ -191,29 +223,16 @@ function CreatePostModal({
                 />
               </label>
             </div>
-
-            <div className="relative">
-              <select
-                value={selectedCountry}
-                onChange={(e) => setSelectedCountry(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-full border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 appearance-none bg-white text-blue-950 text-sm shadow-sm"
-                aria-label={t('complaint.country') || 'Країна'}
-              >
-                <option value="">{t('selectCountry')}</option>
-                {countries.map((country) => (
-                  <option key={country.code} value={country.code}>
-                    {country.name[i18n.language]}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="w-4 h-4 text-gray-500 absolute right-3 top-3 pointer-events-none" />
-            </div>
           </div>
 
           <button
             onClick={handleCreatePost}
             disabled={loading || (!newPostContent && !newPostMedia)}
-            className={`w-full px-4 py-3 rounded-full font-semibold text-white transition-all duration-300 flex items-center justify-center gap-2 text-sm shadow-md hover:shadow-xl ${loading ? 'bg-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-blue-900 via-blue-800 to-blue-700 hover:from-blue-950 hover:via-blue-900 hover:to-blue-800'}`}
+            className={`w-full px-4 py-3 rounded-full font-semibold text-white transition-all duration-300 flex items-center justify-center gap-2 text-sm shadow-md hover:shadow-xl ${
+              loading || (!newPostContent && !newPostMedia)
+                ? 'bg-gray-400 cursor-not-allowed'
+                : 'bg-gradient-to-r from-blue-900 via-blue-800 to-blue-700 hover:from-blue-950 hover:via-blue-900 hover:to-blue-800'
+            }`}
           >
             {loading ? (
               <>
@@ -221,9 +240,7 @@ function CreatePostModal({
                 {t('publishing')}
               </>
             ) : (
-              <>
-                {t('publish')}
-              </>
+              t('publish')
             )}
           </button>
         </div>
