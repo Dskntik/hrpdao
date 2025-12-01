@@ -10,7 +10,7 @@ class ApiAIService {
 
   async generateResponse(userMessage) {
     try {
-      console.log(`🧠 ${this.name} AI Request #${this.apiCalls + 1}:`, userMessage);
+      console.log(`🧠 ${this.name} vGr Request #${this.apiCalls + 1}:`, userMessage);
       
       const startTime = Date.now();
       const response = await this.callGroqAPI(userMessage);
@@ -19,12 +19,12 @@ class ApiAIService {
       this.lastResponseTime = endTime - startTime;
       this.apiCalls++;
       
-      console.log(`✅ ${this.name} Success: ${this.lastResponseTime}ms`);
+      console.log(`✅ ${this.name} vGr Success: ${this.lastResponseTime}ms`);
       return response;
       
     } catch (error) {
-      console.error(`❌ ${this.name} Error:`, error);
-      throw new Error(`AI Service: ${error.message}`);
+      console.error(`❌ ${this.name} vGr Error:`, error);
+      throw new Error(`vGr Service: ${error.message}`);
     }
   }
 
@@ -33,7 +33,7 @@ class ApiAIService {
     const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
 
     if (!GROQ_API_KEY) {
-      throw new Error('Groq API key not found. Add VITE_GROQ_API_KEY to .env');
+      throw new Error('vGr API key not found. Add VITE_GROQ_API_KEY to .env');
     }
 
     // Detect query language
@@ -94,9 +94,9 @@ Always provide specific articles, case numbers, and practical steps!`;
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Groq error:', response.status, errorText);
+        console.error('vGr error:', response.status, errorText);
         if (response.status === 429) {
-          throw new Error('Too many requests. Wait 1 minute (Groq free tier limit).');
+          throw new Error('Too many requests. Wait 1 minute (vGr free tier limit).');
         }
         if (response.status === 401) {
           throw new Error('Invalid API key. Check VITE_GROQ_API_KEY.');
@@ -140,7 +140,7 @@ Always provide specific articles, case numbers, and practical steps!`;
 
   // Improved test function
   async testAPI() {
-    console.log(`🧪 Testing ${this.name} AI Advisor...`);
+    console.log(`🧪 Testing ${this.name} vGr AI...`);
     const testMessage = "What to do if police detained illegally? Provide law references.";
     
     try {
@@ -153,7 +153,7 @@ Always provide specific articles, case numbers, and practical steps!`;
         response: result,
         responseTime: this.lastResponseTime,
         apiCalls: this.apiCalls,
-        service: 'Groq API',
+        service: 'vGr API',
         model: 'llama-3.1-8b-instant',
         features: [
           'Multilingual responses',
@@ -172,7 +172,7 @@ Always provide specific articles, case numbers, and practical steps!`;
         testMessage,
         error: error.message,
         apiCalls: this.apiCalls,
-        service: 'Groq API',
+        service: 'vGr API',
         timestamp: new Date().toISOString()
       };
     }
@@ -182,7 +182,7 @@ Always provide specific articles, case numbers, and practical steps!`;
     return {
       isInitialized: true,
       advisor: this.name,
-      service: 'Groq API - Powerful Human Rights Advisor',
+      service: 'vGr API - Powerful Human Rights Advisor',
       model: 'llama-3.1-8b-instant',
       apiCalls: this.apiCalls,
       lastResponseTime: this.lastResponseTime,
@@ -212,7 +212,7 @@ export const apiAIService = new ApiAIService();
 if (typeof window !== 'undefined') {
   window.apiAIService = apiAIService;
   window.AtticusAI = apiAIService; // Alternative name for convenience
-  console.log(`🧠 ${apiAIService.name} AI Advisor ready! Try:`);
+  console.log(`🧠 ${apiAIService.name} vGr AI Advisor ready! Try:`);
   console.log('• window.AtticusAI.testAPI() - for testing');
   console.log('• window.AtticusAI.getLawReference("Criminal Code", "127") - to get article info');
   console.log('• window.AtticusAI.getStatus() - to view status');
