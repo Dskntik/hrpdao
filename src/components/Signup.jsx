@@ -1,50 +1,189 @@
+// Signup.jsx
 import React from "react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { supabase } from "../utils/supabase";
-import { connectWallet } from "../utils/web3";
 import {
   FaGoogle,
-  FaTwitter,
   FaInfoCircle,
   FaEye,
   FaEyeSlash,
+  FaPhone,
+  FaMapMarkerAlt,
 } from "react-icons/fa";
 import { SiEthereum } from "react-icons/si";
 import { useNavigate } from "react-router-dom";
 import countries from "../utils/countries";
 import { motion, AnimatePresence } from "framer-motion";
+import { useGeolocation } from "../hooks/useGeolocation";
+import { useAuth } from "../hooks/useAuth";
+import PhoneVerification from "./PhoneVerification";
+import WalletVerification from "./WalletVerification";
+import { useLanguage } from '../hooks/useLanguage';
 
 function Signup() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const navigate = useNavigate();
+  
+  // Custom hooks
+  const { getGeolocation, isLoading: geoLoading, error: geoError } = useGeolocation();
+  const { 
+    handleSignup, 
+    handleGoogleAuth, 
+    handlePhoneAuth,
+    handleWalletAuth,
+    verifyOTP,
+    isLoading: authLoading, 
+    error: authError,
+    setError: setAuthError 
+  } = useAuth();
+
+  // Use language hook
+  const {
+    currentLanguage,
+    showLanguageDropdown,
+    changeLanguage,
+    toggleLanguageDropdown,
+    closeLanguageDropdown,
+    getLanguageName,
+    availableLanguages
+  } = useLanguage();
+
   const [step, setStep] = useState(1);
   const [loginInput, setLoginInput] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [birthDate, setBirthDate] = useState("");
-  const [country, setCountry] = useState("");
+  const [country, setCountry] = useState("EARTH");
   const [username, setUsername] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
-  const [geolocationAccepted, setGeolocationAccepted] = useState(false);
-  const [error, setError] = useState(null);
   const [inputError, setInputError] = useState(null);
   const [passwordError, setPasswordError] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
+  const [usernameAvailability, setUsernameAvailability] = useState(null);
+  const [emailAvailability, setEmailAvailability] = useState(null);
+  const [authMethod, setAuthMethod] = useState('email');
+  const [showPhoneVerification, setShowPhoneVerification] = useState(false);
+  const [showWalletVerification, setShowWalletVerification] = useState(false);
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [usernameCheckTimeout, setUsernameCheckTimeout] = useState(null);
+  const [emailCheckTimeout, setEmailCheckTimeout] = useState(null);
+
+  const isLoading = authLoading || geoLoading;
+  const error = authError || geoError;
+
+  // Check username availability
+  const checkUsernameAvailability = useCallback(async (username) => {
+    if (!username || username.length < 3) {
+      setUsernameAvailability(null);
+      return;
+    }
+    
+    setUsernameAvailability('checking');
+    
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('username')
+        .eq('username', username)
+        .maybeSingle();
+      
+      if (error) {
+        console.error('Error checking username:', error);
+        setUsernameAvailability(null);
+        return;
+      }
+      
+      if (data) {
+        setUsernameAvailability('taken');
+      } else {
+        setUsernameAvailability('available');
+      }
+    } catch (error) {
+      console.error('Error checking username:', error);
+      setUsernameAvailability(null);
+    }
+  }, []);
+
+  // Check email availability
+  const checkEmailAvailability = useCallback(async (email) => {
+    if (!email || !email.includes('@')) {
+      setEmailAvailability(null);
+      return;
+    }
+    
+    setEmailAvailability('checking');
+    
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('email')
+        .eq('email', email)
+        .maybeSingle();
+      
+      if (error) {
+        console.error('Error checking email:', error);
+        setEmailAvailability(null);
+        return;
+      }
+      
+      if (data) {
+        setEmailAvailability('taken');
+      } else {
+        setEmailAvailability('available');
+      }
+    } catch (error) {
+      console.error('Error checking email:', error);
+      setEmailAvailability(null);
+    }
+  }, []);
+
+  const handleUsernameChange = useCallback((value) => {
+    const cleanedValue = value.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    setUsername(cleanedValue);
+    
+    if (usernameCheckTimeout) {
+      clearTimeout(usernameCheckTimeout);
+    }
+    
+    if (cleanedValue.length >= 3) {
+      const timeout = setTimeout(() => {
+        checkUsernameAvailability(cleanedValue);
+      }, 500);
+      setUsernameCheckTimeout(timeout);
+    } else {
+      setUsernameAvailability(null);
+    }
+  }, [usernameCheckTimeout, checkUsernameAvailability]);
+
+  const handleLoginInputChange = useCallback((value) => {
+    setLoginInput(value);
+    
+    if (authMethod === 'email' && value.includes('@')) {
+      if (emailCheckTimeout) {
+        clearTimeout(emailCheckTimeout);
+      }
+      
+      const timeout = setTimeout(() => {
+        checkEmailAvailability(value);
+      }, 500);
+      setEmailCheckTimeout(timeout);
+    } else {
+      setEmailAvailability(null);
+    }
+  }, [authMethod, emailCheckTimeout, checkEmailAvailability]);
 
   useEffect(() => {
-    const savedLanguage = localStorage.getItem("language") || "uk";
-    i18n.changeLanguage(savedLanguage);
-  }, [i18n]);
-
-  const handleLanguageChange = (lng) => {
-    i18n.changeLanguage(lng);
-    localStorage.setItem("language", lng);
-    setShowLanguageDropdown(false);
-  };
+    return () => {
+      if (usernameCheckTimeout) {
+        clearTimeout(usernameCheckTimeout);
+      }
+      if (emailCheckTimeout) {
+        clearTimeout(emailCheckTimeout);
+      }
+    };
+  }, [usernameCheckTimeout, emailCheckTimeout]);
 
   const validateAge = (date) => {
     const today = new Date();
@@ -57,12 +196,16 @@ function Signup() {
   };
 
   const validateInput = (value) => {
-    if (!value) return t("invalidEmailOrPhone");
-    const isEmail = value.includes("@");
-    if (isEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))
-      return t("invalidEmailOrPhone");
-    if (!isEmail && !/^\+?\d{10,15}$/.test(value))
-      return t("invalidEmailOrPhone");
+    if (!value) return t("invalidEmailOrPhone") || "Invalid email or phone number";
+    
+    if (authMethod === 'email') {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))
+        return t("invalidEmailOrPhone") || "Invalid email or phone number";
+    } else if (authMethod === 'phone') {
+      if (!/^\+?\d{10,15}$/.test(value))
+        return t("invalidEmailOrPhone") || "Invalid email or phone number";
+    }
+    
     return null;
   };
 
@@ -72,14 +215,8 @@ function Signup() {
         value
       )
     )
-      return t("invalidPassword");
+      return t("invalidPassword") || "Password must be at least 8 characters with letters, numbers and special characters";
     return null;
-  };
-
-  const handleLoginInputChange = (e) => {
-    const value = e.target.value;
-    setLoginInput(value);
-    setInputError(validateInput(value));
   };
 
   const handlePasswordChange = (e) => {
@@ -88,168 +225,198 @@ function Signup() {
     setPasswordError(validatePassword(value));
   };
 
-  const getGeolocation = () => {
-    setIsLoading(true);
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        async (pos) => {
-          const { latitude, longitude } = pos.coords;
-          try {
-            const response = await fetch(
-              `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`
-            );
-            const data = await response.json();
-            const countryCode =
-              countries.find((c) => c.name.en === data.countryName)?.code || "";
-            setCountry(countryCode);
-            setGeolocationAccepted(true);
-            setIsLoading(false);
-          } catch (err) {
-            setError(t("geolocationError"));
-            setIsLoading(false);
-          }
-        },
-        (err) => {
-          setError(t("geolocationNotSupported"));
-          setIsLoading(false);
-        }
-      );
-    } else {
-      setError(t("geolocationNotSupported"));
-      setIsLoading(false);
+  const handleGeolocation = async () => {
+    try {
+      const countryCode = await getGeolocation();
+      setCountry(countryCode);
+    } catch (err) {
+      console.error('Geolocation error:', err);
     }
   };
 
   const handleNextStep = () => {
-    setError(null);
+    setAuthError(null);
     const inputError = validateInput(loginInput);
-    if (inputError) return setError(inputError);
-    const passwordError = validatePassword(password);
-    if (passwordError) return setError(passwordError);
-    if (password !== confirmPassword) return setError(t("passwordMismatch"));
-    setError(null);
+    if (inputError) return setAuthError(inputError);
+    
+    if (authMethod === 'email') {
+      if (emailAvailability === 'taken') {
+        return setAuthError(t("emailAlreadyExists") || "Email is already registered");
+      }
+      
+      const passwordError = validatePassword(password);
+      if (passwordError) return setAuthError(passwordError);
+      if (password !== confirmPassword) return setAuthError(t("passwordMismatch") || "Passwords do not match");
+    }
+    
     setStep(2);
   };
 
-  const handleSignup = async () => {
-    setIsLoading(true);
-    setError(null);
-    console.log("Starting signup with:", { loginInput, username, country });
+  const handleSignupSubmit = async () => {
+    setAuthError(null);
+
+    if (!username || username.length < 3) {
+      setAuthError(t("usernameRequired") || "Username is required");
+      return;
+    }
+    
+    if (usernameAvailability !== 'available') {
+      setAuthError(t("usernameNotAvailable") || "Username is not available");
+      return;
+    }
 
     if (!termsAccepted) {
-      setError(t("terms"));
-      setIsLoading(false);
+      setAuthError(t("terms") || "You must accept the terms and conditions");
       return;
     }
 
-    if (validateAge(birthDate) < 18) {
-      setError(t("ageRestriction"));
-      setIsLoading(false);
+    if (birthDate && validateAge(birthDate) < 18) {
+      setAuthError(t("ageRestriction") || "You must be at least 18 years old");
       return;
     }
 
-    if (country && !geolocationAccepted) {
-      setError(t("acceptGeolocation"));
-      setIsLoading(false);
-      return;
-    }
+    const userData = {
+      loginInput,
+      username,
+      country: country || 'EARTH',
+      password,
+      birthDate
+    };
 
-    try {
-      const isEmail = loginInput.includes("@");
-      console.log("Is email:", isEmail);
-      // Check for unique username
-      const { data: existingUser } = await supabase
-        .from("users")
-        .select("username")
-        .eq("username", username)
-        .single();
-      if (existingUser) {
-        setError(t("usernameTaken"));
-        setIsLoading(false);
-        return;
-      }
-      const { data, error } = isEmail
-        ? await supabase.auth.signUp({
-            email: loginInput,
-            password,
-            options: { data: { username, country } },
-          })
-        : await supabase.auth.signInWithOtp({ phone: loginInput });
-      console.log("Auth response:", { data, error });
-      if (error) {
-        setError(error.message);
-        setIsLoading(false);
-        return;
-      }
-      const userId =
-        data?.user?.id || (await supabase.auth.getUser())?.data?.user?.id;
-      console.log("User ID:", userId);
-      const { error: upsertError } = await supabase.from("users").upsert({
-        id: userId,
+    if (authMethod === 'phone') {
+      const success = await handlePhoneAuth(loginInput, {
         username,
-        [isEmail ? "email" : "phone"]: loginInput,
-        country,
+        country: country || 'EARTH',
+        birthDate
       });
-      console.log("Upsert response:", { upsertError });
-      if (upsertError) {
-        setError(upsertError.message);
-        setIsLoading(false);
-        return;
+      
+      if (success) {
+        setPhoneNumber(loginInput);
+        setShowPhoneVerification(true);
       }
-      alert(isEmail ? t("checkEmail") : t("checkSMS"));
-      navigate("/onboarding");
-    } catch (err) {
-      console.error("Signup error:", err.message);
-      setError(err.message);
+      return;
     }
-    setIsLoading(false);
+
+    const success = await handleSignup(userData);
+
+    if (success) {
+      alert(t("checkEmail") || "Please check your email for verification");
+      navigate("/onboarding");
+    }
   };
 
-  const handleGoogleAuth = async () => {
-    setIsLoading(true);
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-    });
-    if (error) setError(error.message);
-    else navigate("/onboarding");
-    setIsLoading(false);
-  };
-
-  const handleXAuth = async () => {
-    setIsLoading(true);
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "twitter",
-    });
-    if (error) setError(error.message);
-    else navigate("/onboarding");
-    setIsLoading(false);
-  };
-
-  const handleWalletAuth = async () => {
-    setIsLoading(true);
+  const handlePhoneVerification = async (token) => {
     try {
-      const signer = await connectWallet();
-      const address = await signer.getAddress();
-      const { error } = await supabase
-        .from("users")
-        .upsert({
-          id: (await supabase.auth.getUser())?.data?.user?.id,
-          wallet_address: address,
-          username,
-        });
-      if (error) setError(error.message);
-      else {
-        alert(t("walletConnected") + `: ${address}`);
+      const user = await verifyOTP(phoneNumber, token);
+      if (user) {
+        setShowPhoneVerification(false);
         navigate("/onboarding");
       }
     } catch (err) {
-      setError(err.message);
+      console.error("Phone verification error:", err);
+      setAuthError(t("verificationError"));
     }
-    setIsLoading(false);
   };
+
+  const handleGoogleSignup = async () => {
+    const success = await handleGoogleAuth();
+    if (success) {
+      // Navigation will happen after OAuth redirect
+    }
+  };
+
+  const handleWalletSignup = async () => {
+    setAuthError(null);
+    setShowWalletVerification(true);
+  };
+
+  const handleWalletVerificationSuccess = () => {
+    setShowWalletVerification(false);
+    navigate("/onboarding");
+  };
+
+  // Render verification components
+  if (showWalletVerification) {
+    return (
+      <WalletVerification 
+        onBack={() => setShowWalletVerification(false)}
+        onSuccess={handleWalletVerificationSuccess}
+      />
+    );
+  }
+
+  if (showPhoneVerification) {
+    return (
+      <PhoneVerification 
+        phoneNumber={phoneNumber}
+        onVerify={handlePhoneVerification}
+        onBack={() => setShowPhoneVerification(false)}
+        isLoading={isLoading}
+        error={error}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col items-center justify-center p-4">
+      {/* Language selection button for mobile version */}
+      <div className="lg:hidden fixed top-4 right-4 z-20">
+        <div className="relative">
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={toggleLanguageDropdown}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-white/95 backdrop-blur-sm border border-blue-100 text-blue-950 shadow-sm hover:shadow-md transition-all duration-200 text-sm"
+            aria-label={t("selectLanguage")}
+          >
+            <span className="font-medium">
+              {getLanguageName(currentLanguage)}
+            </span>
+            <svg
+              className={`w-4 h-4 transition-transform ${
+                showLanguageDropdown ? "rotate-180" : ""
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M19 9l-7 7-7-7"
+              />
+            </svg>
+          </motion.button>
+
+          <AnimatePresence>
+            {showLanguageDropdown && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="absolute top-full right-0 mt-2 w-48 bg-white/95 rounded-2xl shadow-lg border border-blue-100 overflow-hidden z-10 backdrop-blur-sm"
+              >
+                {availableLanguages.map((language) => (
+                  <button
+                    key={language.code}
+                    onClick={() => changeLanguage(language.code)}
+                    className="w-full px-4 py-3 text-left text-sm hover:bg-blue-50 transition-colors flex items-center gap-2"
+                  >
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        currentLanguage === language.code ? "bg-blue-600" : "bg-gray-300"
+                      }`}
+                    ></span>
+                    {language.name}
+                  </button>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -288,6 +455,30 @@ function Signup() {
             </div>
           </div>
 
+          {/* Auth Method Selector */}
+          <div className="flex mb-4 bg-gray-100 rounded-full p-1">
+            <button
+              onClick={() => setAuthMethod('email')}
+              className={`flex-1 py-2 px-4 rounded-full text-sm font-medium transition-all ${
+                authMethod === 'email' 
+                  ? 'bg-white text-blue-900 shadow-sm' 
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              {t("email")}
+            </button>
+            <button
+              onClick={() => setAuthMethod('phone')}
+              className={`flex-1 py-2 px-4 rounded-full text-sm font-medium transition-all ${
+                authMethod === 'phone' 
+                  ? 'bg-white text-blue-900 shadow-sm' 
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              {t("phone")}
+            </button>
+          </div>
+
           {error && (
             <motion.div
               initial={{ opacity: 0, y: -10 }}
@@ -304,24 +495,27 @@ function Signup() {
               {/* Login Input (Email or Phone) */}
               <div className="mb-4">
                 <label className="block text-sm font-medium text-blue-950 mb-1.5">
-                  {t("emailOrPhone")}
+                  {authMethod === 'email' ? t("emailPlaceholder") : t("phonePlaceholder")}
                 </label>
                 <div className="relative group">
                   <input
                     type="text"
                     value={loginInput}
-                    onChange={handleLoginInputChange}
-                    placeholder="example@email.com або +380123456789"
+                    onChange={(e) => handleLoginInputChange(e.target.value)}
+                    placeholder={authMethod === 'email' ? "example@email.com" : "+380123456789"}
                     className={`w-full px-4 py-2.5 rounded-full border ${
                       inputError ? "border-red-500" : "border-gray-200"
                     } bg-gray-50 text-blue-950 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200`}
-                    aria-label={t("emailOrPhone")}
+                    aria-label={authMethod === 'email' ? t("emailPlaceholder") : t("phonePlaceholder")}
                   />
                   <div className="absolute left-0 top-full mt-1 hidden group-hover:block bg-white/95 shadow-lg p-3 rounded-2xl border border-blue-100 z-10 backdrop-blur-sm">
                     <div className="flex items-start gap-2">
                       <FaInfoCircle className="text-blue-600 text-sm mt-0.5 flex-shrink-0" />
                       <span className="text-xs text-blue-950 opacity-80">
-                        {t("emailOrPhoneTooltip")}
+                        {authMethod === 'email' 
+                          ? (t("emailOrPhoneTooltip") || "Enter your email address")
+                          : (t("phoneTooltip") || "Enter your phone number with country code")
+                        }
                       </span>
                     </div>
                   </div>
@@ -329,86 +523,101 @@ function Signup() {
                 {inputError && (
                   <p className="text-red-500 text-xs mt-2">{inputError}</p>
                 )}
-              </div>
-
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-blue-950 mb-1.5">
-                  {t("password")}
-                </label>
-                <div className="relative group">
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    value={password}
-                    onChange={handlePasswordChange}
-                    placeholder="••••••••"
-                    className={`w-full px-4 py-2.5 rounded-full border ${
-                      passwordError ? "border-red-500" : "border-gray-200"
-                    } bg-gray-50 text-blue-950 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 pr-12`}
-                    aria-label={t("password")}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-2 top-2 p-1.5 text-gray-400 hover:text-blue-600 transition-colors rounded-full"
-                    aria-label={
-                      showPassword ? t("hidePassword") : t("showPassword")
-                    }
-                  >
-                    {showPassword ? (
-                      <FaEyeSlash className="w-4 h-4" />
-                    ) : (
-                      <FaEye className="w-4 h-4" />
-                    )}
-                  </button>
-                  <div className="absolute left-0 top-full mt-1 hidden group-hover:block bg-white/95 shadow-lg p-3 rounded-2xl border border-blue-100 z-10 backdrop-blur-sm">
-                    <div className="flex items-start gap-2">
-                      <FaInfoCircle className="text-blue-600 text-sm mt-0.5 flex-shrink-0" />
-                      <span className="text-xs text-blue-950 opacity-80">
-                        {t("passwordTooltip")}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                {passwordError && (
-                  <p className="text-red-500 text-xs mt-2">{passwordError}</p>
+                {authMethod === 'email' && loginInput.includes('@') && (
+                  <p className={`text-xs mt-1 ${
+                    emailAvailability === 'available' ? 'text-green-600' : 
+                    emailAvailability === 'checking' ? 'text-blue-600' : 
+                    emailAvailability === 'taken' ? 'text-red-600' : 'text-gray-500'
+                  }`}>
+                    {emailAvailability === 'checking' && (t("checkingEmail") || "Checking email...")}
+                    {emailAvailability === 'available' && (t("emailAvailable") || "Email is available")}
+                    {emailAvailability === 'taken' && (t("emailTaken") || "Email is already registered")}
+                  </p>
                 )}
               </div>
 
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-blue-950 mb-1.5">
-                  {t("confirmPassword")}
-                </label>
-                <div className="relative">
-                  <input
-                    type={showConfirmPassword ? "text" : "password"}
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className={`w-full px-4 py-2.5 rounded-full border ${
-                      error && error.includes(t("passwordMismatch"))
-                        ? "border-red-500"
-                        : "border-gray-200"
-                    } bg-gray-50 text-blue-950 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 pr-12`}
-                    aria-label={t("confirmPassword")}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-2 top-2 p-1.5 text-gray-400 hover:text-blue-600 transition-colors rounded-full"
-                    aria-label={
-                      showConfirmPassword
-                        ? t("hidePassword")
-                        : t("showPassword")
-                    }
-                  >
-                    {showConfirmPassword ? (
-                      <FaEyeSlash className="w-4 h-4" />
-                    ) : (
-                      <FaEye className="w-4 h-4" />
+              {authMethod === 'email' && (
+                <>
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-blue-950 mb-1.5">
+                      {t("password")}
+                    </label>
+                    <div className="relative group">
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        value={password}
+                        onChange={handlePasswordChange}
+                        placeholder="•••••••••"
+                        className={`w-full px-4 py-2.5 rounded-full border ${
+                          passwordError ? "border-red-500" : "border-gray-200"
+                        } bg-gray-50 text-blue-950 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 pr-12`}
+                        aria-label={t("password")}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-2 top-2 p-1.5 text-gray-400 hover:text-blue-600 transition-colors rounded-full"
+                        aria-label={
+                          showPassword ? t("hidePassword") : t("showPassword")
+                        }
+                      >
+                        {showPassword ? (
+                          <FaEyeSlash className="w-4 h-4" />
+                        ) : (
+                          <FaEye className="w-4 h-4" />
+                        )}
+                      </button>
+                      <div className="absolute left-0 top-full mt-1 hidden group-hover:block bg-white/95 shadow-lg p-3 rounded-2xl border border-blue-100 z-10 backdrop-blur-sm">
+                        <div className="flex items-start gap-2">
+                          <FaInfoCircle className="text-blue-600 text-sm mt-0.5 flex-shrink-0" />
+                          <span className="text-xs text-blue-950 opacity-80">
+                            {t("passwordTooltip")}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    {passwordError && (
+                      <p className="text-red-500 text-xs mt-2">{passwordError}</p>
                     )}
-                  </button>
-                </div>
-              </div>
+                  </div>
+
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-blue-950 mb-1.5">
+                      {t("confirmPassword")}
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showConfirmPassword ? "text" : "password"}
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder="•••••••••"
+                        className={`w-full px-4 py-2.5 rounded-full border ${
+                          error && error.includes(t("passwordMismatch"))
+                            ? "border-red-500"
+                            : "border-gray-200"
+                        } bg-gray-50 text-blue-950 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 pr-12`}
+                        aria-label={t("confirmPassword")}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="absolute right-2 top-2 p-1.5 text-gray-400 hover:text-blue-600 transition-colors rounded-full"
+                        aria-label={
+                          showConfirmPassword
+                            ? t("hidePassword")
+                            : t("showPassword")
+                        }
+                      >
+                        {showConfirmPassword ? (
+                          <FaEyeSlash className="w-4 h-4" />
+                        ) : (
+                          <FaEye className="w-4 h-4" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
 
               <motion.button
                 whileHover={{ scale: 1.02 }}
@@ -453,7 +662,7 @@ function Signup() {
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  onClick={handleGoogleAuth}
+                  onClick={handleGoogleSignup}
                   disabled={isLoading}
                   className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-full border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 transition-all duration-200 shadow-sm hover:shadow-md text-sm"
                   aria-label={t("signUpWithGoogle")}
@@ -465,25 +674,13 @@ function Signup() {
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  onClick={handleXAuth}
+                  onClick={handleWalletSignup}
                   disabled={isLoading}
                   className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-full border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 transition-all duration-200 shadow-sm hover:shadow-md text-sm"
-                  aria-label={t("signUpWithX")}
+                  aria-label={t("connectWallet")}
                 >
-                  <FaTwitter className="w-4 h-4 text-blue-400" />
-                  <span className="font-medium">{t("signUpWithX")}</span>
-                </motion.button>
-
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={handleWalletAuth}
-                  disabled={isLoading}
-                  className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-full border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 transition-all duration-200 shadow-sm hover:shadow-md text-sm"
-                  aria-label={t("signUpWithWallet")}
-                >
-                  <SiEthereum className="w-4 h-4" />
-                  <span className="font-medium">{t("signUpWithWallet")}</span>
+                  <SiEthereum className="w-4 h-4 text-purple-600" />
+                  <span className="font-medium">{t("connectWallet")}</span>
                 </motion.button>
               </div>
             </>
@@ -491,18 +688,37 @@ function Signup() {
 
           {step === 2 && (
             <>
-              <div className="mb-6">
+              {/* Username field */}
+              <div className="mb-4">
                 <label className="block text-sm font-medium text-blue-950 mb-1.5">
-                  {t("username")}
+                  {t("username")} *
                 </label>
-                <input
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder={t("username")}
-                  className="w-full px-4 py-2.5 rounded-full border border-gray-200 bg-gray-50 text-blue-950 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                  aria-label={t("username")}
-                />
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <span className="text-gray-500">@</span>
+                  </div>
+                  <input
+                    type="text"
+                    value={username}
+                    onChange={(e) => handleUsernameChange(e.target.value)}
+                    placeholder="johndoe"
+                    className="w-full pl-7 pr-4 py-2.5 rounded-full border border-gray-200 bg-gray-50 text-blue-950 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                    aria-label={t("username")}
+                    maxLength={30}
+                  />
+                </div>
+                {username && (
+                  <p className={`text-xs mt-1 ${
+                    usernameAvailability === 'available' ? 'text-green-600' : 
+                    usernameAvailability === 'checking' ? 'text-blue-600' : 
+                    usernameAvailability === 'taken' ? 'text-red-600' : 'text-gray-500'
+                  }`}>
+                    {usernameAvailability === 'checking' && (t("checkingUsername") || "Checking username...")}
+                    {usernameAvailability === 'available' && (t("usernameAvailable") || "Username is available")}
+                    {usernameAvailability === 'taken' && (t("usernameTaken") || "Username is already taken")}
+                    {!usernameAvailability && (t("usernameRequirements") || "Username must be at least 3 characters")}
+                  </p>
+                )}
               </div>
 
               <div className="mb-4">
@@ -526,99 +742,35 @@ function Signup() {
                 <label className="block text-sm font-medium text-blue-950 mb-1.5">
                   {t("country")}
                 </label>
-                <select
-                  value={country}
-                  onChange={(e) => {
-                    setCountry(e.target.value);
-                    setGeolocationAccepted(true);
-                  }}
-                  className={`w-full px-4 py-2.5 rounded-full border ${
-                    error && error.includes(t("acceptGeolocation"))
-                      ? "border-red-500"
-                      : "border-gray-200"
-                  } bg-gray-50 text-blue-950 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200`}
-                  aria-label={t("country")}
-                >
-                  <option value="">{t("country")}</option>
-                  {countries.map(({ code, name }) => (
-                    <option key={code} value={code}>
-                      {name[i18n.language]}
-                    </option>
-                  ))}
-                </select>
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={getGeolocation}
-                  disabled={isLoading}
-                  className="w-full mt-2 px-4 py-2.5 rounded-full bg-gradient-to-r from-blue-900 via-blue-800 to-blue-700 hover:from-blue-950 hover:via-blue-900 hover:to-blue-800 text-white text-sm font-semibold shadow-md hover:shadow-xl transition-all duration-300 flex items-center justify-center gap-2"
-                  aria-label={t("useGeolocation")}
-                >
-                  {isLoading ? (
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  ) : (
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-                      />
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-                      />
-                    </svg>
-                  )}
-                  {isLoading ? t("loading") : t("useGeolocation")}
-                </motion.button>
-                {country && (
-                  <div className="flex items-center mt-3">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <div className="relative">
-                        <input
-                          type="checkbox"
-                          checked={geolocationAccepted}
-                          onChange={(e) =>
-                            setGeolocationAccepted(e.target.checked)
-                          }
-                          className="sr-only"
-                        />
-                        <div
-                          className={`w-5 h-5 rounded border-2 transition-all duration-200 ${
-                            geolocationAccepted
-                              ? "bg-blue-600 border-blue-600"
-                              : "bg-white border-gray-300"
-                          }`}
-                        >
-                          {geolocationAccepted && (
-                            <svg
-                              className="w-4 h-4 text-white absolute top-0.5 left-0.5"
-                              fill="currentColor"
-                              viewBox="0 0 20 20"
-                            >
-                              <path
-                                fillRule="evenodd"
-                                d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                                clipRule="evenodd"
-                              />
-                            </svg>
-                          )}
-                        </div>
-                      </div>
-                      <span className="text-sm text-blue-950 opacity-80">
-                        {t("acceptGeolocation")}
-                      </span>
-                    </label>
-                  </div>
-                )}
+                <div className="flex items-center gap-2">
+                  <select
+                    value={country}
+                    onChange={(e) => setCountry(e.target.value)}
+                    className={`flex-1 px-4 py-2.5 rounded-full border ${
+                      error && error.includes(t("acceptGeolocation"))
+                        ? "border-red-500"
+                        : "border-gray-200"
+                    } bg-gray-50 text-blue-950 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200`}
+                    aria-label={t("country")}
+                  >
+                    <option value="EARTH">{t("planetEarth")}</option>
+                    {countries.map(({ code, name }) => (
+                      <option key={code} value={code}>
+                        {name[currentLanguage]}
+                      </option>
+                    ))}
+                  </select>
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={handleGeolocation}
+                    disabled={isLoading}
+                    className="p-2.5 bg-blue-100 hover:bg-blue-200 rounded-full transition-colors"
+                    title={t("useGeolocation")}
+                  >
+                    <FaMapMarkerAlt className="text-blue-600 w-5 h-5" />
+                  </motion.button>
+                </div>
               </div>
 
               <div className="flex items-center mb-6">
@@ -668,7 +820,7 @@ function Signup() {
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
-                onClick={handleSignup}
+                onClick={handleSignupSubmit}
                 disabled={isLoading}
                 className="w-full px-4 py-3 rounded-full font-semibold transition-all duration-300 flex items-center justify-center gap-2 shadow-md hover:shadow-xl text-sm bg-gradient-to-r from-blue-900 via-blue-800 to-blue-700 hover:from-blue-950 hover:via-blue-900 hover:to-blue-800 text-white"
                 aria-label={t("signup")}
@@ -714,17 +866,18 @@ function Signup() {
           transition={{ duration: 0.5, delay: 0.4 }}
           className="text-center lg:text-left"
         >
-          <div className="flex justify-center lg:justify-end mb-6">
+          {/* Language selection button for desktop version */}
+          <div className="hidden lg:flex justify-center lg:justify-end mb-6">
             <div className="relative">
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
+                onClick={toggleLanguageDropdown}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-white/95 backdrop-blur-sm border border-blue-100 text-blue-950 shadow-sm hover:shadow-md transition-all duration-200 text-sm"
                 aria-label={t("selectLanguage")}
               >
                 <span className="font-medium">
-                  {i18n.language === "uk" ? "Українська" : "English"}
+                  {getLanguageName(currentLanguage)}
                 </span>
                 <svg
                   className={`w-4 h-4 transition-transform ${
@@ -749,30 +902,22 @@ function Signup() {
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
-                    className="absolute top-full right-0 mt-2 w-40 bg-white/95 rounded-2xl shadow-lg border border-blue-100 overflow-hidden z-10 backdrop-blur-sm"
+                    className="absolute top-full right-0 mt-2 w-48 bg-white/95 rounded-2xl shadow-lg border border-blue-100 overflow-hidden z-10 backdrop-blur-sm"
                   >
-                    <button
-                      onClick={() => handleLanguageChange("uk")}
-                      className="w-full px-4 py-3 text-left text-sm hover:bg-blue-50 transition-colors flex items-center gap-2"
-                    >
-                      <span
-                        className={`w-2 h-2 rounded-full ${
-                          i18n.language === "uk" ? "bg-blue-600" : "bg-gray-300"
-                        }`}
-                      ></span>
-                      Українська
-                    </button>
-                    <button
-                      onClick={() => handleLanguageChange("en")}
-                      className="w-full px-4 py-3 text-left text-sm hover:bg-blue-50 transition-colors flex items-center gap-2"
-                    >
-                      <span
-                        className={`w-2 h-2 rounded-full ${
-                          i18n.language === "en" ? "bg-blue-600" : "bg-gray-300"
-                        }`}
-                      ></span>
-                      English
-                    </button>
+                    {availableLanguages.map((language) => (
+                      <button
+                        key={language.code}
+                        onClick={() => changeLanguage(language.code)}
+                        className="w-full px-4 py-3 text-left text-sm hover:bg-blue-50 transition-colors flex items-center gap-2"
+                      >
+                        <span
+                          className={`w-2 h-2 rounded-full ${
+                            currentLanguage === language.code ? "bg-blue-600" : "bg-gray-300"
+                          }`}
+                        ></span>
+                        {language.name}
+                      </button>
+                    ))}
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -816,7 +961,7 @@ function Signup() {
                         strokeLinecap="round"
                         strokeLinejoin="round"
                         strokeWidth={2}
-                        d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+                        d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
                       />
                     </svg>
                   </div>
