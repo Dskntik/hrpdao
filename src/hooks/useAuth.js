@@ -1,4 +1,4 @@
-// hooks/useAuth.js - БЕЗ реферальної програми (працює як оригінал)
+// hooks/useAuth.js - ПОВНІСТЮ ВИПРАВЛЕНА ВЕРСІЯ
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { supabase } from "../utils/supabase";
@@ -26,7 +26,6 @@ export const useAuth = () => {
         await initWeb3AuthOptional();
         setWeb3Initialized(true);
         
-        // Перевіряємо збережені дані гаманця
         const savedAddress = getWalletAddress();
         const savedUserData = getWeb3UserData();
         
@@ -45,21 +44,22 @@ export const useAuth = () => {
     initializeWeb3();
   }, []);
 
-  // Створення/оновлення профілю користувача
+  // Створення/оновлення профілю користувача - ОДНА ВЕРСІЯ
   const createOrUpdateUserProfile = async (user, userData = {}) => {
     try {
       if (!user || !user.id) {
         throw new Error('User ID is required');
       }
 
-      const phoneValue = user.phone || userData.phone;
-      const processedPhone = phoneValue === "" ? null : phoneValue;
+      // Обробка телефону
+      const phoneValue = userData.phone || user.phone || null;
+      const processedPhone = (phoneValue && phoneValue !== "") ? phoneValue : null;
 
       const profileData = {
         id: user.id,
         username: userData.username || user.user_metadata?.username || `user_${user.id.slice(0, 8)}`,
-        email: user.email || userData.email || '',
-        phone: processedPhone || null,
+        email: user.email || userData.email || null,
+        phone: processedPhone,
         country: userData.country || 'EARTH',
         profile_picture: user.user_metadata?.avatar_url || userData.profile_picture || null,
         bio: userData.bio || null,
@@ -69,16 +69,30 @@ export const useAuth = () => {
         settings: userData.settings || {},
         role: userData.role || 'user',
         wallet_address: userData.wallet_address || null,
-        birth_date: userData.birthDate || null,
-        is_web3_user: userData.wallet_address ? true : false
+        birth_date: userData.birthDate || userData.birth_date || null,
+        is_web3_user: userData.wallet_address ? true : false,
+        onboarding_completed: userData.onboarding_completed || false,
+        signature_verified: userData.signature_verified || false
       };
 
+      // Видаляємо undefined значення
+      Object.keys(profileData).forEach(key => {
+        if (profileData[key] === undefined) {
+          delete profileData[key];
+        }
+      });
+
       // Перевіряємо, чи існує користувач
-      const { data: existingUser } = await supabase
+      const { data: existingUser, error: checkError } = await supabase
         .from('users')
         .select('id')
         .eq('id', user.id)
         .maybeSingle();
+
+      if (checkError) {
+        console.error('Error checking user:', checkError);
+        return false;
+      }
 
       let result;
 
@@ -89,7 +103,7 @@ export const useAuth = () => {
           .update(profileData)
           .eq('id', user.id);
       } else {
-        // Створюємо новий запис (БЕЗ referral_code та referred_by)
+        // Створюємо новий запис
         const newUserData = {
           ...profileData,
           created_at: new Date().toISOString()
@@ -113,7 +127,165 @@ export const useAuth = () => {
     }
   };
 
-  // Web3 автентифікація
+  // Email/Password реєстрація - ВИПРАВЛЕНА ВЕРСІЯ
+  const handleSignup = async (userData) => {
+    setIsLoading(true);
+    setError(null);
+    
+    const { loginInput, username, country, password, birthDate } = userData;
+    
+    try {
+      const isEmail = loginInput.includes("@");
+      
+      // Phone registration
+      if (!isEmail) {
+        const { data, error } = await supabase.auth.signInWithOtp({
+          phone: loginInput,
+          options: {
+            data: {
+              username: username,
+              country: country,
+              birthDate: birthDate
+            },
+            channel: 'sms'
+          }
+        });
+
+        if (error) {
+          setError(error.message);
+          return false;
+        }
+
+        console.log("✓ OTP sent successfully");
+        return true;
+      }
+
+      // Email registration
+      console.log("📧 Starting email registration...");
+      
+      // Перевіряємо, чи користувач вже існує в таблиці users
+      const { data: existingUser } = await supabase
+        .from('users')
+        .select('email')
+        .eq('email', loginInput)
+        .maybeSingle();
+
+      if (existingUser) {
+        setError(t('userAlreadyExists') || 'User with this email already exists');
+        return false;
+      }
+
+      // Реєструємо користувача в Supabase Auth
+      const { data: authData, error: signUpError } = await supabase.auth.signUp({
+        email: loginInput,
+        password: password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/onboarding`,
+          data: {
+            username: username,
+            country: country || 'EARTH',
+            birth_date: birthDate
+          }
+        }
+      });
+
+      if (signUpError) {
+        console.error("❌ Signup error:", signUpError);
+        
+        if (signUpError.message.includes('already registered') || 
+            signUpError.status === 422 || 
+            signUpError.message.includes('User already registered')) {
+          setError(t('userAlreadyExists') || 'User already exists');
+        } else {
+          setError(signUpError.message || t('authError'));
+        }
+        return false;
+      }
+
+      // Перевіряємо, чи отримали користувача
+      if (!authData?.user?.id) {
+        console.error("❌ No user ID returned from signup");
+        setError(t('signupError') || 'Registration failed. Please try again.');
+        return false;
+      }
+
+      const userId = authData.user.id;
+      console.log("✓ Auth user created:", userId);
+
+      // Чекаємо трохи, щоб уникнути race condition
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Перевіряємо, чи профіль вже створений (через тригер)
+      const { data: existingProfile } = await supabase
+        .from('users')
+        .select('id')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (!existingProfile) {
+        // Створюємо профіль тільки якщо його немає
+        const profileData = {
+          id: userId,
+          username: username,
+          email: loginInput,
+          phone: null,
+          country: country || 'EARTH',
+          birth_date: birthDate || null,
+          profile_picture: null,
+          bio: null,
+          city: null,
+          status: null,
+          social_links: {},
+          settings: {},
+          role: 'user',
+          wallet_address: null,
+          is_web3_user: false,
+          onboarding_completed: false,
+          signature_verified: false,
+          created_at: new Date().toISOString()
+        };
+
+        const { error: profileError } = await supabase
+          .from('users')
+          .insert([profileData]);
+
+        if (profileError) {
+          console.error("❌ Profile creation error:", profileError);
+          // Не повертаємо false, бо користувач вже створений в auth
+        } else {
+          console.log("✓ User profile created successfully");
+        }
+      } else {
+        // Оновлюємо існуючий профіль
+        const { error: updateError } = await supabase
+          .from('users')
+          .update({
+            username: username,
+            country: country || 'EARTH',
+            birth_date: birthDate || null
+          })
+          .eq('id', userId);
+
+        if (updateError) {
+          console.error("❌ Profile update error:", updateError);
+        } else {
+          console.log("✓ User profile updated successfully");
+        }
+      }
+
+      console.log("✅ User registered successfully");
+      return true;
+
+    } catch (err) {
+      console.error("❌ Signup error:", err);
+      setError(err.message || t('authError') || 'Authentication failed');
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Web3 аутентифікація
   const handleWalletAuth = async (userData = {}) => {
     setIsLoading(true);
     setError(null);
@@ -121,7 +293,6 @@ export const useAuth = () => {
     try {
       console.log("🔄 Starting Web3 authentication...");
 
-      // Перевіряємо доступність Web3
       if (!isWeb3Available()) {
         throw new Error(
           t('noWeb3Wallet') || 'Web3 wallet not found. Please install MetaMask or use email/phone login.'
@@ -148,7 +319,6 @@ export const useAuth = () => {
       const normalizedAddress = address.toLowerCase();
       console.log("✅ Wallet connected:", normalizedAddress);
 
-      // Перевіряємо, чи існує користувач з цією адресою
       const { data: existingUser, error: userCheckError } = await supabase
         .from('users')
         .select('*')
@@ -163,11 +333,9 @@ export const useAuth = () => {
       let userId;
 
       if (existingUser) {
-        // Користувач вже існує
         console.log("✅ Existing Web3 user found:", existingUser.id);
         userId = existingUser.id;
         
-        // Оновлюємо дані користувача якщо надано
         if (userData.username || userData.country) {
           const updateData = {};
           if (userData.username) updateData.username = userData.username;
@@ -184,7 +352,6 @@ export const useAuth = () => {
           }
         }
       } else {
-        // Створюємо нового користувача
         console.log("🔄 Creating new Web3 user...");
         
         userId = crypto.randomUUID();
@@ -198,15 +365,15 @@ export const useAuth = () => {
           profile_picture: null,
           bio: null,
           city: null,
-          status: 'active',
+          status: null,
           social_links: {},
           settings: {},
           role: 'user',
           birth_date: userData.birthDate || null,
           created_at: new Date().toISOString(),
           is_web3_user: true,
-          onboarding_completed: false
-          // БЕЗ referral_code та referred_by
+          onboarding_completed: false,
+          signature_verified: false
         };
 
         const { data: newUser, error: profileError } = await supabase
@@ -223,7 +390,6 @@ export const useAuth = () => {
         console.log("✅ New Web3 user created:", newUser.id);
       }
 
-      // Зберігаємо дані в localStorage
       const userDataToStore = {
         id: userId,
         address: normalizedAddress,
@@ -235,7 +401,7 @@ export const useAuth = () => {
 
       localStorage.setItem('web3_user_data', JSON.stringify(userDataToStore));
       localStorage.setItem('wallet_address', normalizedAddress);
-      localStorage.setItem('wallet_user_data', JSON.stringify(userDataToStore)); // legacy support
+      localStorage.setItem('wallet_user_data', JSON.stringify(userDataToStore));
       setWeb3User(userDataToStore);
 
       console.log("✅ Web3 authentication completed successfully");
@@ -244,7 +410,6 @@ export const useAuth = () => {
     } catch (err) {
       console.error("❌ Web3 auth error:", err);
       
-      // Специфічні повідомлення про помилки
       if (err.message.includes('rejected')) {
         setError(t('connectionRejected') || 'Connection request was rejected');
       } else if (err.message.includes('not found')) {
@@ -261,13 +426,12 @@ export const useAuth = () => {
     }
   };
 
-  // Google автентифікація (БЕЗ referralCode, але backwards compatible)
-  const handleGoogleAuth = async (referralCode = null) => {
+  // Google аутентифікація
+  const handleGoogleAuth = async () => {
     setIsLoading(true);
     setError(null);
     
     try {
-      // referralCode ігнорується
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
@@ -290,14 +454,12 @@ export const useAuth = () => {
     }
   };
 
-  // Phone автентифікація (БЕЗ referralCode, але backwards compatible)
-  const handlePhoneAuth = async (phone, referralCode = null, userData = {}) => {
+  // Phone аутентифікація
+  const handlePhoneAuth = async (phone, userData = {}) => {
     setIsLoading(true);
     setError(null);
     
     try {
-      // referralCode ігнорується
-      
       if (userData.username || userData.country || userData.birthDate) {
         localStorage.setItem('pending_user_data', JSON.stringify(userData));
       }
@@ -324,88 +486,6 @@ export const useAuth = () => {
     } catch (err) {
       console.error('Phone auth error:', err);
       setError(t('authError') || 'Authentication failed');
-      return false;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Email/Password реєстрація (БЕЗ referralCode, але backwards compatible)
-  const handleSignup = async (userData) => {
-    setIsLoading(true);
-    setError(null);
-    
-    const { loginInput, username, country, referralCode, password, birthDate } = userData;
-    
-    try {
-      const isEmail = loginInput.includes("@");
-      
-      if (isEmail) {
-        const { data, error } = await supabase.auth.signUp({
-          email: loginInput,
-          password: password,
-          options: {
-            data: {
-              username: username,
-              country: country,
-              birthDate: birthDate
-            }
-          }
-        });
-
-        if (error) {
-          if (error.message.includes('already registered') || error.status === 422) {
-            setError(t('userAlreadyExists') || 'User already exists');
-          } else {
-            setError(error.message);
-          }
-          return false;
-        }
-        
-        const userId = data?.user?.id;
-
-        if (userId) {
-          const profileSuccess = await createOrUpdateUserProfile(data.user, {
-            username,
-            country: country || "EARTH",
-            birthDate: birthDate
-          });
-
-          if (!profileSuccess) {
-            setError(t('profileCreationError') || 'Profile creation failed');
-            return false;
-          }
-
-          // referralCode ігнорується
-        }
-
-        console.log("✓ User registered successfully");
-        return true;
-      } else {
-        // Phone registration
-        const { data, error } = await supabase.auth.signInWithOtp({
-          phone: loginInput,
-          options: {
-            data: {
-              username: username,
-              country: country,
-              birthDate: birthDate
-            },
-            channel: 'sms'
-          }
-        });
-
-        if (error) {
-          setError(error.message);
-          return false;
-        }
-
-        console.log("✓ OTP sent successfully");
-        return true;
-      }
-    } catch (err) {
-      console.error("Signup error:", err);
-      setError(err.message || t('authError') || 'Authentication failed');
       return false;
     } finally {
       setIsLoading(false);
@@ -468,7 +548,7 @@ export const useAuth = () => {
     }
   };
 
-  // Verify OTP (БЕЗ referral processing)
+  // Verify OTP
   const verifyOTP = async (phone, token) => {
     setIsLoading(true);
     setError(null);
@@ -498,8 +578,6 @@ export const useAuth = () => {
         }
         
         await createOrUpdateUserProfile(data.user, userData);
-        
-        // БЕЗ referral processing
       }
       
       return data.user;
@@ -534,7 +612,7 @@ export const useAuth = () => {
     }
   };
 
-  // Перевірка Web3 автентифікації
+  // Перевірка Web3 аутентифікації
   const isWeb3Authenticated = () => {
     const address = getWalletAddress();
     return address && isValidEthereumAddress(address);
@@ -565,7 +643,6 @@ export const useAuth = () => {
       }
       
       disconnectWallet();
-      
       localStorage.removeItem('pending_user_data');
       
       setWeb3User(null);
@@ -584,7 +661,7 @@ export const useAuth = () => {
   };
 
   return {
-    // Методи автентифікації
+    // Методи аутентифікації
     handleSignup,
     handleGoogleAuth,
     handlePhoneAuth,
@@ -601,7 +678,7 @@ export const useAuth = () => {
     // Загальні методи
     getCurrentUser,
     createOrUpdateUserProfile,
-    processReferral, // заглушка для backwards compatibility
+    processReferral,
     
     // Стан
     isLoading,
